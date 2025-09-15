@@ -1,0 +1,450 @@
+/* Grid + OTT Trading Bot - Custom Styles */
+
+/* Tailwind CSS base'i genişletir */
+
+/* Loading spinner animation */
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.loading {
+    position: relative;
+}
+
+.loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin-left: -8px;
+    margin-top: -8px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 1s linear infinite;
+}
+
+/* Pulse animation for status indicators */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: .5;
+    }
+}
+
+.pulse {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Custom focus styles */
+.focus-ring:focus {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 2px #3B82F6;
+}
+
+/* Table hover effects */
+.table-hover tbody tr:hover {
+    background-color: #F9FAFB;
+}
+
+/* Status badge animations */
+.status-badge {
+    transition: all 0.2s ease-in-out;
+}
+
+.status-badge:hover {
+    transform: scale(1.05);
+}
+
+/* Custom scrollbar for tables */
+.overflow-x-auto::-webkit-scrollbar {
+    height: 6px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+    background: #F1F5F9;
+    border-radius: 3px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 3px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+    background: #94A3B8;
+}
+
+/* Grid lines for better readability */
+.grid-lines {
+    background-image: 
+        linear-gradient(to right, #E5E7EB 1px, transparent 1px),
+        linear-gradient(to bottom, #E5E7EB 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+/* Card hover effects */
+.card {
+    transition: all 0.3s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 10px 25px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    transform: translateY(-1px);
+}
+
+/* Pasif strateji satırları - turuncu vurgu */
+.bg-orange-50 {
+    background-color: #FFFBEB;
+}
+
+.border-orange-400 {
+    border-color: #FB923C;
+}
+
+/* Pasif strateji hover efekti */
+.bg-orange-50:hover {
+    background-color: #FEF3C7 !important;
+}
+
+/* Açık emirler tablosu için özel stiller */
+.open-orders-table {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.open-orders-table thead {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.open-orders-table thead th {
+    color: white;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+
+/* Açık emir durumu için renkli göstergeler */
+.order-status-pending {
+    background-color: #FEF3C7;
+    color: #92400E;
+}
+
+.order-status-partial {
+    background-color: #DBEAFE;
+    color: #1E40AF;
+}
+
+.order-status-filling {
+    background-color: #D1FAE5;
+    color: #065F46;
+}
+
+/* Button loading state */
+.btn.loading {
+    color: transparent;
+    cursor: not-allowed;
+}
+
+/* Toast notification animations */
+.toast-enter {
+    transform: translateX(100%);
+    opacity: 0;
+}
+
+.toast-enter-active {
+    transform: translateX(0);
+    opacity: 1;
+    transition: all 0.3s ease-out;
+}
+
+.toast-exit {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.toast-exit-active {
+    transform: translateX(100%);
+    opacity: 0;
+    transition: all 0.3s ease-in;
+}
+
+/* Form validation styles */
+.form-error {
+    border-color: #EF4444;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+}
+
+.form-success {
+    border-color: #10B981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+/* Progress bars */
+.progress-bar {
+    background: linear-gradient(90deg, #3B82F6, #1D4ED8);
+    transition: width 0.3s ease-in-out;
+}
+
+/* Custom checkbox/radio styles */
+.custom-checkbox:checked {
+    background-color: #3B82F6;
+    border-color: #3B82F6;
+}
+
+.custom-radio:checked {
+    background-color: #3B82F6;
+    border-color: #3B82F6;
+}
+
+/* Modal backdrop blur */
+.modal-backdrop {
+    backdrop-filter: blur(4px);
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* Skeleton loading */
+.skeleton {
+    background: linear-gradient(90deg, #F1F5F9 25%, #E2E8F0 50%, #F1F5F9 75%);
+    background-size: 200% 100%;
+    animation: loading 1.5s infinite;
+}
+
+@keyframes loading {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Trading specific styles */
+.buy-signal {
+    background-color: #DCFCE7;
+    border-color: #16A34A;
+    color: #166534;
+}
+
+.sell-signal {
+    background-color: #FEE2E2;
+    border-color: #DC2626;
+    color: #991B1B;
+}
+
+.neutral-signal {
+    background-color: #F3F4F6;
+    border-color: #6B7280;
+    color: #374151;
+}
+
+/* Price change indicators */
+.price-up {
+    color: #16A34A;
+}
+
+.price-down {
+    color: #DC2626;
+}
+
+.price-neutral {
+    color: #6B7280;
+}
+
+/* Chart container styles */
+.chart-container {
+    position: relative;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 640px) {
+    .card {
+        padding: 1rem;
+    }
+    
+    .btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+    }
+    
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+}
+
+/* Dark mode support (future enhancement) */
+@media (prefers-color-scheme: dark) {
+    .dark-mode .card {
+        background-color: #1F2937;
+        border-color: #374151;
+    }
+    
+    .dark-mode .text-gray-900 {
+        color: #F9FAFB;
+    }
+    
+    .dark-mode .text-gray-600 {
+        color: #D1D5DB;
+    }
+}
+
+/* Print styles */
+@media print {
+    .btn, .no-print {
+        display: none !important;
+    }
+    
+    .card {
+        box-shadow: none;
+        border: 1px solid #E5E7EB;
+    }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+    .card {
+        border-width: 2px;
+    }
+    
+    .btn {
+        border-width: 2px;
+    }
+    
+    .status-badge {
+        border-width: 1px;
+        border-style: solid;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    * {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+    
+    .pulse {
+        animation: none;
+    }
+}
+
+/* Custom utilities */
+.text-shadow {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.border-gradient {
+    border-image: linear-gradient(45deg, #3B82F6, #1D4ED8) 1;
+}
+
+/* HTMX specific styles */
+.htmx-indicator {
+    opacity: 0;
+    transition: opacity 200ms ease-in;
+}
+
+.htmx-request .htmx-indicator {
+    opacity: 1;
+}
+
+.htmx-request.htmx-indicator {
+    opacity: 1;
+}
+
+/* Error states */
+.error-state {
+    background-color: #FEF2F2;
+    border-color: #FECACA;
+    color: #991B1B;
+}
+
+.warning-state {
+    background-color: #FFFBEB;
+    border-color: #FDE68A;
+    color: #92400E;
+}
+
+.success-state {
+    background-color: #F0FDF4;
+    border-color: #BBF7D0;
+    color: #166534;
+}
+
+.info-state {
+    background-color: #EFF6FF;
+    border-color: #BFDBFE;
+    color: #1E40AF;
+}
+
+/* Responsive table improvements */
+.table-responsive {
+    min-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.table-responsive table {
+    min-width: 1200px; /* Minimum genişlik - fiyat limitleri sütunu için artırıldı */
+}
+
+/* Compact table cells for mobile */
+@media (max-width: 768px) {
+    .table-responsive th,
+    .table-responsive td {
+        padding: 0.5rem 0.25rem;
+        font-size: 0.75rem;
+        white-space: nowrap;
+    }
+    
+    .table-responsive .table-hide-mobile {
+        display: none;
+    }
+}
+
+/* Grid reference price styling */
+.grid-reference {
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: #6B7280;
+}
+
+/* PnL styling */
+.pnl-positive {
+    color: #059669;
+    font-weight: 600;
+}
+
+.pnl-negative {
+    color: #DC2626;
+    font-weight: 600;
+}
+
+.pnl-neutral {
+    color: #6B7280;
+    font-weight: 500;
+}
+
+/* New trade highlight animation */
+@keyframes highlightNewTrade {
+    0% {
+        background-color: #FEF3C7;
+    }
+    100% {
+        background-color: transparent;
+    }
+}
+
+.new-trade-highlight {
+    animation: highlightNewTrade 2s ease-out;
+}

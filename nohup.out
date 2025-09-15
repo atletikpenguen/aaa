@@ -1,0 +1,26 @@
+2025-09-10 08:51:18,207 - trading_bot - INFO - Binance mainnet kullanılıyor
+2025-09-10 08:51:27,105 - trading_bot - INFO - Binance API bağlantısı başarılı
+2025-09-10 08:51:27,676 - trading_bot - INFO - Strateji oluşturuldu: Grid+OTT
+2025-09-10 08:51:27,677 - trading_bot - INFO - Strateji oluşturuldu: DCA+OTT
+2025-09-10 08:51:27,677 - trading_bot - INFO - Strateji oluşturuldu: BOL-Grid
+2025-09-10 08:51:27,678 - trading_bot - INFO - Strategy Engine başlatıldı. Desteklenen stratejiler: [<StrategyType.GRID_OTT: 'grid_ott'>, <StrategyType.DCA_OTT: 'dca_ott'>, <StrategyType.BOL_GRID: 'bol_grid'>]
+INFO:     Will watch for changes in these directories: ['/root/aaa']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [16305] using WatchFiles
+INFO:     Started server process [16317]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+2025-09-10 08:51:42,584 - trading_bot - ERROR - ❌ ORDER monitor loop hatası: Task <Task pending name='Task-4' coro=<BackgroundTaskManager._order_monitor_loop() running at /root/aaa/app.py:149>> got Future <Future pending> attached to a different loop
+2025-09-10 08:51:42,595 - trading_bot - ERROR - Strateji loop hatası afb5f1c4: Task <Task pending name='Task-6' coro=<BackgroundTaskManager._strategy_loop() running at /root/aaa/app.py:206>> got Future <Future pending> attached to a different loop
+2025-09-10 08:51:42,597 - trading_bot - ERROR - Strateji loop hatası 6a89eeb1: Task <Task pending name='Task-7' coro=<BackgroundTaskManager._strategy_loop() running at /root/aaa/app.py:206>> got Future <Future pending> attached to a different loop
+2025-09-10 08:51:42,598 - trading_bot - ERROR - Strateji loop hatası 66638f5d: Task <Task pending name='Task-8' coro=<BackgroundTaskManager._strategy_loop() running at /root/aaa/app.py:206>> got Future <Future pending> attached to a different loop
+2025-09-10 08:51:42,600 - trading_bot - ERROR - Strateji loop hatası 032e3b5b: Task <Task pending name='Task-9' coro=<BackgroundTaskManager._strategy_loop() running at /root/aaa/app.py:206>> got Future <Future pending> attached to a different loop
+2025-09-10 08:51:42,601 - trading_bot - ERROR - Strateji loop hatası 8b1304a4: Task <Task pending name='Task-10' coro=<BackgroundTaskManager._strategy_loop() running at /root/aaa/app.py:206>> got Future <Future pending> attached to a different loop
+2025-09-10 08:51:42,603 - trading_bot - ERROR - Strateji loop hatası f101dc87: Task <Task pending name='Task-11' coro=<BackgroundTaskManager._strategy_loop() running at /root/aaa/app.py:206>> got Future <Future pending> attached to a different loop
+2025-09-10 08:51:42,604 - trading_bot - ERROR - Strateji loop hatası 8c2a22c5: Task <Task pending name='Task-12' coro=<BackgroundTaskManager._strategy_loop() running at /root/aaa/app.py:206>> got Future <Future pending> attached to a different loop
+2025-09-10 08:51:42,605 - trading_bot - ERROR - Strateji loop hatası 47682998: Task <Task pending name='Task-13' coro=<BackgroundTaskManager._strategy_loop() running at /root/aaa/app.py:206>> got Future <Future pending> attached to a different loop
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [16317]
+INFO:     Stopping reloader process [16305]

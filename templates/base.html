@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Grid + OTT Trading Bot{% endblock %}</title>
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- HTMX -->
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    
+    <!-- Alpine.js -->
+    <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+    
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+    
+    <style>
+        [x-cloak] { display: none !important; }
+        
+        .status-badge {
+            @apply px-2 py-1 text-xs font-semibold rounded-full;
+        }
+        
+        .status-active {
+            @apply bg-green-100 text-green-800;
+        }
+        
+        .status-inactive {
+            @apply bg-gray-100 text-gray-800;
+        }
+        
+        .status-running {
+            @apply bg-blue-100 text-blue-800;
+        }
+        
+        .card {
+            @apply bg-white rounded-lg shadow-md border border-gray-200 p-6;
+        }
+        
+        .btn {
+            @apply px-4 py-2 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-offset-2;
+        }
+        
+        .btn-primary {
+            @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+        }
+        
+        .btn-success {
+            @apply bg-green-600 text-white hover:bg-green-700 focus:ring-green-500;
+        }
+        
+        .btn-danger {
+            @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+        }
+        
+        .new-trade-highlight {
+            @apply bg-green-50 border-l-4 border-green-400;
+            animation: fadeToNormal 2s ease-in-out;
+        }
+        
+        @keyframes fadeToNormal {
+            0% { @apply bg-green-100; }
+            100% { @apply bg-white; }
+        }
+        
+        .btn-secondary {
+            @apply bg-gray-600 text-white hover:bg-gray-700 focus:ring-gray-500;
+        }
+        
+        .btn-warning {
+            @apply bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-500;
+        }
+        
+        .loading {
+            @apply opacity-50 cursor-not-allowed;
+        }
+        
+        .pulse-dot {
+            animation: pulse-dot 2s infinite;
+        }
+        
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-lg border-b border-gray-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <a href="/" class="flex items-center space-x-2">
+                        <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                            <span class="text-white font-bold text-sm">GT</span>
+                        </div>
+                        <span class="text-xl font-bold text-gray-900">Grid + OTT Bot</span>
+                    </a>
+                </div>
+                
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center space-x-2 text-sm text-gray-600">
+                        <div class="w-2 h-2 bg-green-500 rounded-full pulse-dot"></div>
+                        <span>Aktif</span>
+                    </div>
+                    
+                    <a href="/health" 
+                       class="text-gray-600 hover:text-gray-900 text-sm font-medium"
+                       hx-get="/health" 
+                       hx-target="#health-modal-content" 
+                       hx-trigger="click"
+                       @click="$dispatch('open-modal', {modal: 'health'})">
+                        Sistem Durumu
+                    </a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Modals Container -->
+    <div id="modals-container">
+        <!-- Health Modal -->
+        <div x-data="{ open: false }" 
+             x-show="open" 
+             @open-modal.window="open = ($event.detail.modal === 'health')"
+             @close-modal.window="open = false"
+             @keydown.escape.window="open = false"
+             x-cloak
+             class="fixed inset-0 z-50 overflow-y-auto"
+             style="display: none;">
+            
+            <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" 
+                     @click="open = false"></div>
+                
+                <div class="inline-block w-full max-w-md p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+                    <h3 class="text-lg font-medium leading-6 text-gray-900 mb-4">
+                        Sistem Durumu
+                    </h3>
+                    
+                    <div id="health-modal-content" class="text-sm text-gray-600">
+                        Yükleniyor...
+                    </div>
+                    
+                    <div class="mt-6">
+                        <button type="button" 
+                                @click="open = false"
+                                class="btn btn-secondary w-full">
+                            Kapat
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Create Strategy Modal -->
+        <div x-data="{ open: false }" 
+             x-show="open" 
+             @open-modal.window="open = ($event.detail.modal === 'create-strategy')"
+             @close-modal.window="open = false"
+             @keydown.escape.window="open = false"
+             x-cloak
+             class="fixed inset-0 z-50 overflow-y-auto"
+             style="display: none;">
+            
+            <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+                <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" 
+                     @click="open = false"></div>
+                
+                <div class="inline-block w-full max-w-2xl p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+                    <h3 class="text-lg font-medium leading-6 text-gray-900 mb-6">
+                        Yeni Strateji Oluştur
+                    </h3>
+                    
+                    <form hx-post="/strategies" 
+                          hx-target="body"
+                          hx-on::after-request="if(event.detail.successful) $dispatch('close-modal')"
+                          x-data="{ strategyType: 'grid_ott' }"
+                          @submit="handleStrategySubmit()"
+                          class="space-y-4">
+                        
+                        <!-- Strateji Türü Seçimi (tam genişlik) -->
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">
+                                Strateji Türü
+                            </label>
+                            <select name="strategy_type" 
+                                    x-model="strategyType"
+                                    required
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                <option value="grid_ott">Grid + OTT Stratejisi</option>
+                                <option value="dca_ott">DCA + OTT Stratejisi</option>
+                                <option value="bol_grid">BOL-Grid Stratejisi (YENİ!)</option>
+                            </select>
+                            <div class="mt-2 text-sm text-gray-600">
+                                <div x-show="strategyType === 'grid_ott'" class="space-y-1">
+                                    <p>🎯 <strong>Grid + OTT:</strong> Trend yönüne göre grid seviyelerde alış-satış</p>
+                                    <p class="text-xs">• Çift yönlü kar • Grid aralıkları • Matematiksel seviyeleme</p>
+                                </div>
+                                <div x-show="strategyType === 'dca_ott'" class="space-y-1">
+                                    <p>🔥 <strong>DCA + OTT:</strong> Akıllı ortalama alım stratejisi</p>
+                                    <p class="text-xs">• Long-only • Akıllı DCA • Kademeli giriş • Kârlılık çıkışı</p>
+                                </div>
+                                <div x-show="strategyType === 'bol_grid'" class="space-y-1">
+                                    <p>📊 <strong>BOL-Grid:</strong> Bollinger Bands tabanlı döngüsel strateji</p>
+                                    <p class="text-xs">• Bollinger cross sinyalleri • Döngüsel alım-satım • Risk yönetimi</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Strateji Adı
+                                </label>
+                                <input type="text" 
+                                       name="name" 
+                                       required
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="Örn: BTC Grid 1">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Sembol
+                                </label>
+                                <select name="symbol" 
+                                        required
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="BTCUSDT">BTCUSDT</option>
+                                    <option value="ETHUSDT">ETHUSDT</option>
+                                    <option value="AVAXUSDT">AVAXUSDT</option>
+                                    <option value="SOLUSDT">SOLUSDT</option>
+                                    <option value="DOGEUSDT">DOGEUSDT</option>
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Zaman Dilimi
+                                </label>
+                                <select name="timeframe" 
+                                        required
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="1m">1 Dakika</option>
+                                    <option value="5m" selected>5 Dakika</option>
+                                    <option value="15m">15 Dakika</option>
+                                    <option value="1h">1 Saat</option>
+                                    <option value="1d">1 Gün</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Grid+OTT Özel Alanlar -->
+                            <div x-bind:class="strategyType === 'grid_ott' ? '' : 'hidden'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Grid Aralığı (y)
+                                </label>
+                                <input type="number" 
+                                       name="y" 
+                                       step="0.000001"
+                                       required
+                                       value="200"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="200">
+                                <p class="text-xs text-gray-500 mt-1">Grid seviyeleri arası fiyat mesafesi</p>
+                            </div>
+                            
+                            <div x-bind:class="strategyType === 'grid_ott' ? '' : 'hidden'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    USDT/Grid
+                                </label>
+                                <input type="number" 
+                                       name="usdt_grid" 
+                                       step="0.01"
+                                       required
+                                       value="100"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="100">
+                                <p class="text-xs text-gray-500 mt-1">Her grid seviyesi için kullanılacak USDT</p>
+                            </div>
+                            
+                            <div x-bind:class="strategyType === 'grid_ott' ? '' : 'hidden'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Giriş Fiyatı (GF)
+                                </label>
+                                <input type="number" 
+                                       name="gf" 
+                                       step="0.000001"
+                                       value="0"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="0 (otomatik)">
+                                <p class="text-xs text-gray-500 mt-1">Grid foundation başlangıç fiyatı</p>
+                            </div>
+                            
+                            <!-- DCA+OTT Özel Alanlar -->
+                            <div x-show="strategyType === 'dca_ott'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    İlk Alım Tutarı (USDT)
+                                </label>
+                                <input type="number" 
+                                       name="base_usdt" 
+                                       step="0.01"
+                                       :required="strategyType === 'dca_ott'"
+                                       value="100"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="100">
+                                <p class="text-xs text-gray-500 mt-1">İlk giriş için kullanılacak USDT miktarı</p>
+                            </div>
+                            
+                            <div x-show="strategyType === 'dca_ott'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    DCA Çarpanı
+                                </label>
+                                <input type="number" 
+                                       name="dca_multiplier" 
+                                       step="0.1"
+                                       :required="strategyType === 'dca_ott'"
+                                       value="1.5"
+                                       min="1.0"
+                                       max="5.0"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="1.5">
+                                <p class="text-xs text-gray-500 mt-1">Her DCA'da alım miktarı çarpanı (1.5 = %50 artış)</p>
+                            </div>
+                            
+                            <div x-show="strategyType === 'dca_ott'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Min Düşüş Yüzdesi (%)
+                                </label>
+                                <input type="number" 
+                                       name="min_drop_pct" 
+                                       step="0.1"
+                                       :required="strategyType === 'dca_ott'"
+                                       value="2.0"
+                                       min="0.5"
+                                       max="20.0"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="2.0">
+                                <p class="text-xs text-gray-500 mt-1">DCA tetiklenmesi için minimum düşüş yüzdesi</p>
+                            </div>
+                            
+                            <!-- BOL-Grid Özel Alanlar -->
+                            <div x-show="strategyType === 'bol_grid'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    İlk Alım Tutarı (USDT)
+                                </label>
+                                <input type="number" 
+                                       name="initial_usdt" 
+                                       step="1"
+                                       :required="strategyType === 'bol_grid'"
+                                       value="100"
+                                       min="10"
+                                       max="10000"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="100">
+                                <p class="text-xs text-gray-500 mt-1">Her alım için kullanılacak USDT miktarı</p>
+                            </div>
+                            
+                            <div x-show="strategyType === 'bol_grid'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Min Düşüş Yüzdesi (%)
+                                </label>
+                                <input type="number" 
+                                       name="min_drop_pct" 
+                                       step="0.1"
+                                       :required="strategyType === 'bol_grid'"
+                                       value="2.0"
+                                       min="0.5"
+                                       max="20.0"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="2.0">
+                                <p class="text-xs text-gray-500 mt-1">Ek alım için minimum düşüş yüzdesi</p>
+                            </div>
+                            
+                            <div x-show="strategyType === 'bol_grid'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Min Kar Yüzdesi (%)
+                                </label>
+                                <input type="number" 
+                                       name="min_profit_pct" 
+                                       step="0.1"
+                                       :required="strategyType === 'bol_grid'"
+                                       value="1.0"
+                                       min="0.1"
+                                       max="10.0"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="1.0">
+                                <p class="text-xs text-gray-500 mt-1">Satış için minimum kar yüzdesi</p>
+                            </div>
+                            
+                            <div x-show="strategyType === 'bol_grid'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Bollinger Periyodu
+                                </label>
+                                <input type="number" 
+                                       name="bollinger_period" 
+                                       step="1"
+                                       :required="strategyType === 'bol_grid'"
+                                       value="250"
+                                       min="20"
+                                       max="500"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="250">
+                                <p class="text-xs text-gray-500 mt-1">Bollinger Bands hesaplama periyodu</p>
+                            </div>
+                            
+                            <div x-show="strategyType === 'bol_grid'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Standart Sapma
+                                </label>
+                                <input type="number" 
+                                       name="bollinger_std" 
+                                       step="0.1"
+                                       :required="strategyType === 'bol_grid'"
+                                       value="2.0"
+                                       min="1.0"
+                                       max="3.0"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="2.0">
+                                <p class="text-xs text-gray-500 mt-1">Bollinger Bands genişliği (standart sapma)</p>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Min Fiyat Limiti
+                                </label>
+                                <input type="number" 
+                                       name="price_min" 
+                                       step="0.000001"
+                                       min="0"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="Opsiyonel - alt fiyat sınırı">
+                                <p class="text-xs text-gray-500 mt-1">Bu fiyatın altında işlem yapılmaz</p>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    Max Fiyat Limiti
+                                </label>
+                                <input type="number" 
+                                       name="price_max" 
+                                       step="0.000001"
+                                       min="0"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                       placeholder="Opsiyonel - üst fiyat sınırı">
+                                <p class="text-xs text-gray-500 mt-1">Bu fiyatın üstünde işlem yapılmaz</p>
+                            </div>
+                            
+                            <!-- OTT alanları - BOL-Grid için gizli -->
+                            <div x-show="strategyType !== 'bol_grid'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    OTT Period
+                                </label>
+                                <input type="number" 
+                                       name="ott_period" 
+                                       min="1" 
+                                       max="200"
+                                       value="14"
+                                       :required="strategyType !== 'bol_grid'"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                            
+                            <div x-show="strategyType !== 'bol_grid'">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">
+                                    OTT Opt (%)
+                                </label>
+                                <input type="number" 
+                                       name="ott_opt" 
+                                       step="0.1"
+                                       min="0.1"
+                                       max="10"
+                                       value="2.0"
+                                       :required="strategyType !== 'bol_grid'"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                            </div>
+                        </div>
+                        
+                        <div class="flex justify-end space-x-3 pt-4">
+                            <button type="button" 
+                                    @click="$dispatch('close-modal')"
+                                    class="btn btn-secondary">
+                                İptal
+                            </button>
+                            <button type="submit" 
+                                    class="btn btn-primary">
+                                Oluştur
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Strategy Modal -->
+    <div x-data="{ 
+            open: false, 
+            strategyData: null,
+            init() {
+                this.$watch('open', value => {
+                    if (value && this.strategyData) {
+                        this.populateForm();
+                    }
+                });
+            },
+            populateForm() {
+                console.log('populateForm called with:', this.strategyData);
+                if (!this.strategyData) return;
+                const form = this.$refs.editForm;
+                if (form) {
+                    form.name.value = this.strategyData.name || '';
+                    form.y.value = this.strategyData.y || '';
+                    form.usdt_grid.value = this.strategyData.usdt_grid || '';
+                    form.gf.value = this.strategyData.gf || 0;
+                    form.price_min.value = this.strategyData.price_min === null ? '' : this.strategyData.price_min || '';
+                    form.price_max.value = this.strategyData.price_max === null ? '' : this.strategyData.price_max || '';
+                    form.ott_period.value = this.strategyData.ott_period || 14;
+                    form.ott_opt.value = this.strategyData.ott_opt || 2.0;
+                    console.log('Form populated successfully');
+                }
+            }
+         }" 
+         x-show="open" 
+         @open-edit-modal.window="strategyData = $event.detail; open = true"
+         @close-modal.window="open = false"
+         @keydown.escape.window="open = false"
+         x-cloak
+         class="fixed inset-0 z-50 overflow-y-auto"
+         style="display: none;">
+        
+        <div class="flex items-center justify-center min-h-screen px-4 pt-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 transition-opacity bg-gray-500 bg-opacity-75" 
+                 @click="open = false"></div>
+            
+            <div class="inline-block w-full max-w-2xl p-6 my-8 overflow-hidden text-left align-middle transition-all transform bg-white shadow-xl rounded-lg">
+                <h3 class="text-lg font-medium leading-6 text-gray-900 mb-6">
+                    Strateji Düzenle
+                </h3>
+                
+                <form x-ref="editForm"
+                      method="POST"
+                      action="/strategies/update"
+                      hx-post="/strategies/update"
+                      hx-target="body"
+                      hx-on::after-request="if(event.detail.successful) $dispatch('close-modal')"
+                      @submit="console.log('Strategy Data:', strategyData)"
+                      class="space-y-4">
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- Hidden fields for method override and strategy ID -->
+                        <input type="hidden" name="method_override" value="PUT">
+                        <input type="hidden" name="strategy_id" x-model="strategyData?.strategyId">
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Strateji Adı
+                            </label>
+                            <input type="text" 
+                                   name="name" 
+                                   required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Örn: BTC Grid 1">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Grid Aralığı (y)
+                            </label>
+                            <input type="number" 
+                                   name="y" 
+                                   step="0.000001"
+                                   required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="200">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                USDT/Grid
+                            </label>
+                            <input type="number" 
+                                   name="usdt_grid" 
+                                   step="0.01"
+                                   required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="100">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Giriş Fiyatı (GF)
+                            </label>
+                            <input type="number" 
+                                   name="gf" 
+                                   step="0.000001"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="0 (otomatik)">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Min Fiyat Limiti
+                            </label>
+                            <input type="number" 
+                                   name="price_min" 
+                                   step="0.000001"
+                                   min="0"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Opsiyonel - alt fiyat sınırı">
+                            <p class="text-xs text-gray-500 mt-1">Bu fiyatın altında işlem yapılmaz</p>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                Max Fiyat Limiti
+                            </label>
+                            <input type="number" 
+                                   name="price_max" 
+                                   step="0.000001"
+                                   min="0"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                   placeholder="Opsiyonel - üst fiyat sınırı">
+                            <p class="text-xs text-gray-500 mt-1">Bu fiyatın üstünde işlem yapılmaz</p>
+                        </div>
+                        
+                        <!-- OTT alanları - BOL-Grid için gizli -->
+                        <div x-show="strategyData.strategy_type !== 'bol_grid'">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                OTT Period
+                            </label>
+                            <input type="number" 
+                                   name="ott_period" 
+                                   min="1" 
+                                   max="200"
+                                   :required="strategyData.strategy_type !== 'bol_grid'"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        
+                        <div x-show="strategyData.strategy_type !== 'bol_grid'">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">
+                                OTT Opt (%)
+                            </label>
+                            <input type="number" 
+                                   name="ott_opt" 
+                                   step="0.1"
+                                   min="0.1"
+                                   max="10"
+                                   :required="strategyData.strategy_type !== 'bol_grid'"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+                    
+                    <div class="bg-yellow-50 border border-yellow-200 rounded-md p-3 mt-4">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+                                </svg>
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-sm font-medium text-yellow-800">Dikkat</h3>
+                                <div class="mt-1 text-sm text-yellow-700">
+                                    Aktif strateji parametrelerini değiştirmek mevcut işlemleri etkileyebilir. Değişiklik yapmadan önce stratejiyi durdurmanız önerilir.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="flex justify-end space-x-3 pt-4">
+                        <button type="button" 
+                                @click="$dispatch('close-modal')"
+                                class="btn btn-secondary">
+                            İptal
+                        </button>
+                        <button type="submit" 
+                                class="btn btn-primary">
+                            Güncelle
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toast-container" 
+         class="fixed top-4 right-4 z-50 space-y-2"
+         x-data="{ toasts: [] }"
+         @show-toast.window="toasts.push($event.detail); setTimeout(() => toasts.shift(), 5000)">
+        
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="bg-white border-l-4 border-blue-500 rounded-md shadow-lg p-4 max-w-sm"
+                 x-transition:enter="transform ease-out duration-300 transition"
+                 x-transition:enter-start="translate-y-2 opacity-0 sm:translate-y-0 sm:translate-x-2"
+                 x-transition:enter-end="translate-y-0 opacity-100 sm:translate-x-0"
+                 x-transition:leave="transition ease-in duration-100"
+                 x-transition:leave-start="opacity-100"
+                 x-transition:leave-end="opacity-0">
+                
+                <div class="flex items-start">
+                    <div class="flex-1">
+                        <p class="text-sm font-medium text-gray-900" x-text="toast.title"></p>
+                        <p class="text-sm text-gray-600" x-text="toast.message"></p>
+                    </div>
+                    <button @click="toasts = toasts.filter(t => t.id !== toast.id)"
+                            class="ml-3 text-gray-400 hover:text-gray-600">
+                        <span class="sr-only">Kapat</span>
+                        <svg class="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </template>
+    </div>
+
+    <!-- HTMX Extensions -->
+    <script>
+        // HTMX event listeners
+        document.addEventListener('htmx:afterRequest', function(event) {
+            if (event.detail.successful) {
+                // Success toast
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: {
+                        id: Date.now(),
+                        title: 'Başarılı',
+                        message: 'İşlem tamamlandı'
+                    }
+                }));
+            } else {
+                // Error toast
+                window.dispatchEvent(new CustomEvent('show-toast', {
+                    detail: {
+                        id: Date.now(),
+                        title: 'Hata',
+                        message: 'İşlem başarısız oldu'
+                    }
+                }));
+            }
+        });
+        
+        // Strategy form submit handler
+        function handleStrategySubmit() {
+            const strategyType = document.querySelector('[name="strategy_type"]').value;
+            
+            // Strateji tipine göre field'ları ayarla
+            if (strategyType === 'dca_ott') {
+                // DCA+OTT field'larını gönder, Grid field'larını gizle
+                document.querySelectorAll('[name="y"], [name="usdt_grid"], [name="gf"]').forEach(f => f.disabled = true);
+                document.querySelectorAll('[name="base_usdt"], [name="dca_multiplier"], [name="min_drop_pct"]').forEach(f => f.disabled = false);
+            } else {
+                // Grid+OTT field'larını gönder, DCA field'larını gizle
+                document.querySelectorAll('[name="y"], [name="usdt_grid"], [name="gf"]').forEach(f => f.disabled = false);
+                document.querySelectorAll('[name="base_usdt"], [name="dca_multiplier"], [name="min_drop_pct"]').forEach(f => f.disabled = true);
+            }
+            
+            // Boş alanları temizle
+            document.querySelectorAll('input[type="number"]').forEach(input => {
+                if (input.value === '' || input.value === '0') {
+                    input.value = '';
+                }
+            });
+        }
+        
+        // Position Tracker Component
+        function positionTracker() {
+            return {
+                loading: false,
+                positions: [],
+                netPosition: 0,
+                totalLong: 0,
+                totalShort: 0,
+                maxLimit: 2000,
+                minLimit: -1200,
+                riskStatus: 'safe',
+                riskMessage: '',
+                lastUpdate: null,
+                
+                init() {
+                    this.refreshPositions();
+                    // Her 30 saniyede bir otomatik yenile
+                    setInterval(() => this.refreshPositions(), 60000);
+                },
+                
+                async refreshPositions() {
+                    if (this.loading) return;
+                    
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/api/positions');
+                        const result = await response.json();
+                        
+                        if (result.status === 'success') {
+                            const data = result.data;
+                            this.positions = data.positions || [];
+                            this.netPosition = data.net_position_usd || 0;
+                            this.totalLong = data.total_long_usd || 0;
+                            this.totalShort = data.total_short_usd || 0;
+                            this.lastUpdate = new Date();
+                            
+                            // Limitleri güncelle
+                            if (data.limits) {
+                                this.maxLimit = data.limits.max_position_usd;
+                                this.minLimit = data.limits.min_position_usd;
+                            }
+                            
+                            // Risk durumunu hesapla
+                            this.calculateRiskStatus();
+                        } else {
+                            console.error('Pozisyon bilgisi alma hatası:', result.message);
+                        }
+                    } catch (error) {
+                        console.error('Pozisyon yenileme hatası:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                calculateRiskStatus() {
+                    const maxThreshold = this.maxLimit * 0.8; // %80
+                    const minThreshold = this.minLimit * 0.8; // %80
+                    
+                    if (this.netPosition >= maxThreshold) {
+                        this.riskStatus = 'danger';
+                        this.riskMessage = `Maksimum limite yakın (${((this.netPosition / this.maxLimit) * 100).toFixed(1)}%)`;
+                    } else if (this.netPosition <= minThreshold) {
+                        this.riskStatus = 'danger';
+                        this.riskMessage = `Minimum limite yakın (${((this.netPosition / this.minLimit) * 100).toFixed(1)}%)`;
+                    } else if (this.netPosition >= this.maxLimit * 0.6 || this.netPosition <= this.minLimit * 0.6) {
+                        this.riskStatus = 'warning';
+                        this.riskMessage = 'Pozisyon limitine yaklaşıyor';
+                    } else {
+                        this.riskStatus = 'safe';
+                        this.riskMessage = 'Pozisyon güvenli aralıkta';
+                    }
+                },
+                
+                async updateLimits() {
+                    try {
+                        const formData = new FormData();
+                        formData.append('max_position_usd', this.maxLimit);
+                        formData.append('min_position_usd', this.minLimit);
+                        
+                        const response = await fetch('/api/positions/limits', {
+                            method: 'POST',
+                            body: formData
+                        });
+                        
+                        const result = await response.json();
+                        if (result.status === 'success') {
+                            this.calculateRiskStatus();
+                            window.dispatchEvent(new CustomEvent('show-toast', {
+                                detail: {
+                                    id: Date.now(),
+                                    title: 'Başarılı',
+                                    message: 'Pozisyon limitleri güncellendi'
+                                }
+                            }));
+                        } else {
+                            throw new Error(result.message);
+                        }
+                    } catch (error) {
+                        console.error('Limit güncelleme hatası:', error);
+                        window.dispatchEvent(new CustomEvent('show-toast', {
+                            detail: {
+                                id: Date.now(),
+                                title: 'Hata',
+                                message: 'Limit güncelleme başarısız: ' + error.message
+                            }
+                        }));
+                    }
+                }
+            };
+        }
+        
+        // Volume Tracker Component
+        function volumeTracker() {
+            return {
+                loading: false,
+                volumeData: [],
+                totalLongVolume: 0,
+                totalShortVolume: 0,
+                totalNetVolume: 0,
+                totalTrades: 0,
+                
+                init() {
+                    this.refreshVolume();
+                    // Her 5 dakikada bir otomatik yenile
+                    setInterval(() => this.refreshVolume(), 300000);
+                },
+                
+                async refreshVolume() {
+                    if (this.loading) return;
+                    
+                    this.loading = true;
+                    try {
+                        const response = await fetch('/api/volume/daily?days=3');
+                        const result = await response.json();
+                        
+                        if (result.status === 'success') {
+                            this.volumeData = result.data || [];
+                            this.calculateTotals();
+                        } else {
+                            console.error('Hacim bilgisi alma hatası:', result.message);
+                        }
+                    } catch (error) {
+                        console.error('Hacim yenileme hatası:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                calculateTotals() {
+                    this.totalLongVolume = 0;
+                    this.totalShortVolume = 0;
+                    this.totalTrades = 0;
+                    
+                    this.volumeData.forEach(day => {
+                        this.totalLongVolume += day.long_volume || 0;
+                        this.totalShortVolume += day.short_volume || 0;
+                        this.totalTrades += day.total_count || 0;
+                    });
+                    
+                    this.totalNetVolume = this.totalLongVolume - this.totalShortVolume;
+                }
+            };
+        }
+        
+        // Auto refresh kaldırıldı - index.html'de tanımlı
+    </script>
+
+    {% block scripts %}{% endblock %}
+</body>
+</html>

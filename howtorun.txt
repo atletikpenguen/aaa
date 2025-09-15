@@ -1,0 +1,22 @@
+çalışma için
+
+
+uvicorn app:app --reload
+🧪 Development (şu anki):
+✅ Dosya değişikliklerinde otomatik restart
+⚠️ Log'da görüldüğü gibi restart yapıyor (satır 82-84)
+🔄 Her .py dosyası değişince yeniden başlar
+
+
+uvicorn app:app --host 0.0.0.0 --port 8000
+🚀 Production (kararlı çalışma):
+✅ Kararlı çalışma, restart yok
+✅ Emir takibi kesintisiz
+✅ Trading için idealdir
+
+
+uvicorn app:app --reload
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
+venv\Scripts\activate
+
+http://localhost:8000/

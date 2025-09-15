@@ -1,0 +1,29 @@
+{
+  "strategy_id": "f101dc87",
+  "strategy_type": "dca_ott",
+  "gf": null,
+  "dca_positions": [
+    {
+      "buy_price": 0.26381,
+      "quantity": 378.0,
+      "timestamp": "2025-09-15T14:30:33.679000+00:00",
+      "order_id": "81859385175"
+    }
+  ],
+  "avg_cost": 0.26381,
+  "total_quantity": 378.0,
+  "cycle_number": 11,
+  "cycle_trade_count": 1,
+  "open_orders": [],
+  "last_bar_timestamp": "2025-09-15T20:30:00+00:00",
+  "last_ott_mode": "AL",
+  "total_buy_orders": 0,
+  "total_sell_orders": 0,
+  "last_update": "2025-09-15T20:46:00.820859+00:00",
+  "custom_data": {
+    "first_buy_executed": false,
+    "last_ott_action": null,
+    "profit_threshold": 0.0,
+    "use_market_orders": true
+  }
+}

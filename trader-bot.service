@@ -1,0 +1,55 @@
+# Systemd Service File - Trader Bot
+# VPS'de otomatik başlatma için systemd servisi
+# Konum: /etc/systemd/system/trader-bot.service
+
+[Unit]
+Description=Trader YLMZ 3.0 - Automated Trading Bot
+Documentation=https://github.com/your-repo/trader_ylmz_3
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/trader_bot
+Environment=PATH=/home/ubuntu/trader_bot
+ExecStart=/home/ubuntu/trader_bot/trader_bot
+ExecStop=/bin/kill -TERM $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=trader-bot
+
+# Güvenlik ayarları
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/home/ubuntu/trader_bot/logs /home/ubuntu/trader_bot/data
+
+# Kaynak limitleri
+LimitNOFILE=65536
+LimitNPROC=32768
+
+# Çevre değişkenleri
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONIOENCODING=utf-8
+
+[Install]
+WantedBy=multi-user.target
+
+# Kurulum Talimatları:
+# 1. Bu dosyayı /etc/systemd/system/trader-bot.service olarak kopyala
+# 2. sudo systemctl daemon-reload
+# 3. sudo systemctl enable trader-bot
+# 4. sudo systemctl start trader-bot
+# 5. sudo systemctl status trader-bot
+
+# Yönetim Komutları:
+# sudo systemctl start trader-bot      # Başlat
+# sudo systemctl stop trader-bot       # Durdur
+# sudo systemctl restart trader-bot    # Yeniden başlat
+# sudo systemctl status trader-bot     # Durum kontrol
+# sudo journalctl -u trader-bot -f     # Log takip

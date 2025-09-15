@@ -1,0 +1,623 @@
+{% extends "base.html" %}
+
+{% block title %}{{ strategy.name }} - Grid + OTT Trading Bot{% endblock %}
+
+{% block content %}
+<div x-data="{ refreshing: false }" 
+     hx-get="/strategies/{{ strategy.id }}"
+     hx-trigger="refresh"
+     hx-target="body">
+
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <nav class="flex" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-4">
+                    <li>
+                        <a href="/" class="text-gray-400 hover:text-gray-500">
+                            <svg class="flex-shrink-0 h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
+                            </svg>
+                            <span class="sr-only">Dashboard</span>
+                        </a>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <svg class="flex-shrink-0 h-5 w-5 text-gray-300" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+                            </svg>
+                            <span class="ml-4 text-sm font-medium text-gray-500">{{ strategy.name }}</span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+            
+            <h1 class="text-3xl font-bold text-gray-900 mt-2">{{ strategy.name }}</h1>
+            <p class="text-gray-600 mt-1">{{ strategy.symbol.value }} • {{ strategy.timeframe.value }}</p>
+        </div>
+        
+        <div class="flex space-x-3">
+            <button @click="refreshing = true; setTimeout(() => refreshing = false, 1000)"
+                    hx-get="/strategies/{{ strategy.id }}"
+                    hx-target="body"
+                    class="btn btn-secondary"
+                    :class="{ 'loading': refreshing }">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                Yenile
+            </button>
+            
+            {% if strategy.active %}
+                <button hx-post="/api/strategies/{{ strategy.id }}/stop"
+                        hx-target="body"
+                        hx-confirm="Bu stratejiyi durdurmak istediğinize emin misiniz?"
+                        class="btn btn-danger">
+                    Durdur
+                </button>
+            {% else %}
+                <button hx-post="/api/strategies/{{ strategy.id }}/start"
+                        hx-target="body"
+                        class="btn btn-success">
+                    Başlat
+                </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Status Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <!-- Status -->
+        <div class="card">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-600">Durum</p>
+                    <div class="mt-2 flex items-center space-x-2">
+                        {% if strategy.active %}
+                            <span class="status-badge status-active">Aktif</span>
+                        {% else %}
+                            <span class="status-badge status-inactive">Pasif</span>
+                        {% endif %}
+                        
+                        {% if is_running %}
+                            <span class="status-badge status-running">Çalışıyor</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="p-2 bg-blue-100 rounded-lg">
+                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Price -->
+        <div class="card">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-600">Güncel Fiyat</p>
+                    <p class="text-2xl font-semibold text-gray-900">
+                        {% if current_price %}
+                            ${{ current_price | format_number(6) }}
+                        {% else %}
+                            <span class="text-gray-400">-</span>
+                        {% endif %}
+                    </p>
+                    <p class="text-sm text-gray-500">
+                        {% if ott_mode %}
+                            OTT: {{ ott_mode }}
+                        {% else %}
+                            OTT: -
+                        {% endif %}
+                    </p>
+                </div>
+                <div class="p-2 bg-green-100 rounded-lg">
+                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+
+        <!-- Grid Foundation / DCA Info -->
+        <div class="card">
+            <div class="flex items-center justify-between">
+                <div>
+                    {% if strategy.strategy_type.value == 'grid_ott' %}
+                        <p class="text-sm font-medium text-gray-600">Grid Foundation (GF)</p>
+                        <p class="text-2xl font-semibold text-gray-900">
+                            {% if state and state.gf is not none and state.gf > 0 %}
+                                ${{ state.gf | format_number(6) }}
+                            {% else %}
+                                <span class="text-gray-400">Ayarlanmadı</span>
+                            {% endif %}
+                        </p>
+                        <p class="text-sm text-gray-500">
+                            {% if delta %}
+                                Δ: {{ delta | format_number(6) }}
+                            {% else %}
+                                Δ: -
+                            {% endif %}
+                        </p>
+                    {% else %}
+                        <p class="text-sm font-medium text-gray-600">Ortalama Maliyet</p>
+                        <p class="text-2xl font-semibold text-gray-900">
+                            {% if state and state.avg_cost %}
+                                ${{ state.avg_cost | format_number(6) }}
+                            {% else %}
+                                <span class="text-gray-400">Henüz alım yok</span>
+                            {% endif %}
+                        </p>
+                        <p class="text-sm text-gray-500">
+                            {% if state and state.total_quantity > 0 %}
+                                {{ state.total_quantity | format_number(8) }} {{ strategy.symbol.value.replace('USDT', '') }}
+                            {% else %}
+                                Toplam: 0
+                            {% endif %}
+                        </p>
+                        {% if state and state.cycle_number > 0 %}
+                            <p class="text-sm text-purple-600 font-medium">
+                                Döngü: D{{ state.cycle_number }}
+                                {% if state.cycle_trade_count > 0 %}
+                                    -{{ state.cycle_trade_count }}
+                                {% endif %}
+                            </p>
+                        {% endif %}
+                    {% endif %}
+                </div>
+                <div class="p-2 {% if strategy.strategy_type.value == 'grid_ott' %}bg-yellow-100{% else %}bg-blue-100{% endif %} rounded-lg">
+                    {% if strategy.strategy_type.value == 'grid_ott' %}
+                        <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    {% else %}
+                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>
+                        </svg>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Open Orders -->
+        <div class="card">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-600">Açık Emirler</p>
+                    <p class="text-2xl font-semibold text-gray-900">
+                        {% if state %}
+                            {{ state.open_orders | length }}
+                        {% else %}
+                            0
+                        {% endif %}
+                    </p>
+                    <p class="text-sm text-gray-500">
+                        Toplam: {{ strategy.total_trades }} işlem
+                    </p>
+                </div>
+                <div class="p-2 bg-purple-100 rounded-lg">
+                    <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <!-- Strategy Parameters -->
+        <div class="lg:col-span-1">
+            <div class="card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Strateji Parametreleri</h3>
+                
+                <div class="space-y-4">
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Sembol:</span>
+                        <span class="text-sm font-medium text-gray-900">{{ strategy.symbol.value }}</span>
+                    </div>
+                    
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Zaman Dilimi:</span>
+                        <span class="text-sm font-medium text-gray-900">{{ strategy.timeframe.value }}</span>
+                    </div>
+                    
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">Strateji Türü:</span>
+                        <span class="text-sm font-medium text-gray-900">
+                            {% if strategy.strategy_type.value == 'grid_ott' %}
+                                Grid + OTT
+                            {% else %}
+                                DCA + OTT
+                            {% endif %}
+                        </span>
+                    </div>
+                    
+                    {% if strategy.strategy_type.value == 'grid_ott' %}
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">Grid Aralığı (y):</span>
+                            <span class="text-sm font-medium text-gray-900">{{ strategy.y | format_number(6) }}</span>
+                        </div>
+                        
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">USDT/Grid:</span>
+                            <span class="text-sm font-medium text-gray-900">${{ strategy.usdt_grid | format_number(2) }}</span>
+                        </div>
+                    {% else %}
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">İlk Alım Tutarı:</span>
+                            <span class="text-sm font-medium text-gray-900">${{ strategy.parameters.get('base_usdt', 100.0) | format_number(2) }}</span>
+                        </div>
+                        
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">DCA Çarpanı:</span>
+                            <span class="text-sm font-medium text-gray-900">{{ strategy.parameters.get('dca_multiplier', 1.5) | format_number(1) }}x</span>
+                        </div>
+                        
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">Min Düşüş %:</span>
+                            <span class="text-sm font-medium text-gray-900">{{ strategy.parameters.get('min_drop_pct', 2.0) | format_number(1) }}%</span>
+                        </div>
+                        
+                        {% if state and state.cycle_number > 0 %}
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">Mevcut Döngü:</span>
+                            <span class="text-sm font-medium text-purple-600">
+                                D{{ state.cycle_number }}
+                                {% if state.cycle_trade_count > 0 %}
+                                    -{{ state.cycle_trade_count }}
+                                {% endif %}
+                            </span>
+                        </div>
+                        {% endif %}
+                    {% endif %}
+                    
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">OTT Period:</span>
+                        <span class="text-sm font-medium text-gray-900">{{ strategy.ott.period }}</span>
+                    </div>
+                    
+                    <div class="flex justify-between">
+                        <span class="text-sm text-gray-600">OTT Opt:</span>
+                        <span class="text-sm font-medium text-gray-900">{{ strategy.ott.opt }}%</span>
+                    </div>
+                    
+                    {% if strategy.price_min or strategy.price_max %}
+                    <div class="border-t pt-3 mt-3">
+                        <h4 class="text-sm font-medium text-gray-700 mb-2">Fiyat Limitleri</h4>
+                        
+                        {% if strategy.price_min %}
+                        <div class="flex justify-between mb-1">
+                            <span class="text-sm text-gray-600">Min Fiyat:</span>
+                            <span class="text-sm font-medium text-green-600">${{ strategy.price_min | format_number(6) }}</span>
+                        </div>
+                        {% endif %}
+                        
+                        {% if strategy.price_max %}
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-600">Max Fiyat:</span>
+                            <span class="text-sm font-medium text-red-600">${{ strategy.price_max | format_number(6) }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                    
+                    <div class="flex justify-between border-t pt-3 mt-3">
+                        <span class="text-sm text-gray-600">Oluşturulma:</span>
+                        <span class="text-sm font-medium text-gray-900">{{ strategy.created_at | format_datetime }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Signal / DCA Positions -->
+            <div class="card mt-6">
+                {% if strategy.strategy_type.value == 'grid_ott' %}
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">Güncel Sinyal</h3>
+                    
+                    <div class="space-y-3">
+                        {% if ott_mode %}
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm text-gray-600">OTT Modu:</span>
+                                <span class="status-badge {% if ott_mode == 'AL' %}status-active{% else %}bg-red-100 text-red-800{% endif %}">
+                                    {{ ott_mode }}
+                                </span>
+                            </div>
+                        {% endif %}
+                        
+                        {% if target_z and target_price %}
+                            <div class="flex justify-between">
+                                <span class="text-sm text-gray-600">Hedef Z:</span>
+                                <span class="text-sm font-medium text-gray-900">{{ target_z }}</span>
+                            </div>
+                            
+                            <div class="flex justify-between">
+                                <span class="text-sm text-gray-600">Hedef Fiyat:</span>
+                                <span class="text-sm font-medium text-gray-900">${{ target_price | format_number(6) }}</span>
+                            </div>
+                            
+                            <div class="mt-3 p-3 bg-blue-50 rounded-lg">
+                                <p class="text-sm text-blue-800">
+                                    {% if ott_mode == 'AL' %}
+                                        💡 AL sinyali: Z={{ target_z }} seviyesinde alım fiyatı ${{ target_price | format_number(6) }}
+                                    {% else %}
+                                        💡 SAT sinyali: Z={{ target_z }} seviyesinde satım fiyatı ${{ target_price | format_number(6) }}
+                                    {% endif %}
+                                </p>
+                            </div>
+                        {% else %}
+                            <div class="p-3 bg-gray-50 rounded-lg text-center">
+                                <p class="text-sm text-gray-600">Şu anda işlem sinyali yok</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">DCA Pozisyonları</h3>
+                    
+                    <div class="space-y-3">
+                        {% if state and state.dca_positions %}
+                            <div class="space-y-2">
+                                {% for position in state.dca_positions %}
+                                <div class="flex justify-between items-center p-2 bg-gray-50 rounded">
+                                    <div>
+                                        <span class="text-sm font-medium text-gray-900">{{ position.quantity | format_number(8) }} {{ strategy.symbol.value.replace('USDT', '') }}</span>
+                                        <span class="text-xs text-gray-500 ml-2">@ ${{ position.buy_price | format_number(6) }}</span>
+                                    </div>
+                                    <span class="text-xs text-gray-500">{{ position.timestamp | format_datetime }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            
+                            {% if state.avg_cost %}
+                            <div class="mt-3 p-3 bg-green-50 rounded-lg">
+                                <p class="text-sm text-green-800">
+                                    💰 Ortalama Maliyet: ${{ state.avg_cost | format_number(6) }}
+                                </p>
+                                <p class="text-xs text-green-600 mt-1">
+                                    Toplam: {{ state.total_quantity | format_number(8) }} {{ strategy.symbol.value.replace('USDT', '') }}
+                                </p>
+                            </div>
+                            {% endif %}
+                        {% else %}
+                            <div class="p-3 bg-gray-50 rounded-lg text-center">
+                                <p class="text-sm text-gray-600">Henüz DCA pozisyonu yok</p>
+                            </div>
+                        {% endif %}
+                        
+                        {% if ott_mode %}
+                        <div class="mt-3 pt-3 border-t border-gray-200">
+                            <div class="flex items-center justify-between">
+                                <span class="text-sm text-gray-600">OTT Modu:</span>
+                                <span class="status-badge {% if ott_mode == 'AL' %}status-active{% else %}bg-red-100 text-red-800{% endif %}">
+                                    {{ ott_mode }}
+                                </span>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Open Orders & Recent Trades -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Open Orders -->
+            <div class="card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Açık Emirler</h3>
+                
+                {% if state and state.open_orders %}
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Yön</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fiyat</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Miktar</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Z</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tarih</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                {% for order in state.open_orders %}
+                                <tr>
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        <span class="status-badge {% if order.side.value == 'buy' %}status-active{% else %}bg-red-100 text-red-800{% endif %}">
+                                            {% if order.side.value == 'buy' %}AL{% else %}SAT{% endif %}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        ${{ order.price | format_number(6) }}
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        {{ order.quantity | format_number(8) }}
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        {{ order.z }}
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                        {{ order.timestamp | format_datetime }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-8">
+                        <svg class="mx-auto h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path>
+                        </svg>
+                        <p class="text-sm text-gray-500 mt-2">Açık emir bulunmuyor</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Recent Trades -->
+            <div class="card">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-gray-900">Son İşlemler</h3>
+                    <a href="/api/strategies/{{ strategy.id }}/trades.csv"
+                       class="text-sm text-blue-600 hover:text-blue-800 flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        CSV İndir
+                    </a>
+                </div>
+                
+                {% if recent_trades %}
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Yön</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fiyat</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Miktar</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Z</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">GF Değişimi</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tarih</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200">
+                                {% for trade in recent_trades[-10:] %}
+                                <tr>
+                                    <td class="px-4 py-3 whitespace-nowrap">
+                                        <span class="status-badge {% if trade.side.value == 'buy' %}status-active{% else %}bg-red-100 text-red-800{% endif %}">
+                                            {% if trade.side.value == 'buy' %}AL{% else %}SAT{% endif %}
+                                        </span>
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        ${{ trade.price | format_number(6) }}
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        {{ trade.quantity | format_number(8) }}
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        {{ trade.z }}
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                        <div class="flex flex-col">
+                                            <span>${{ trade.gf_before | format_number(6) }}</span>
+                                            <span class="text-xs text-gray-500">→ ${{ trade.gf_after | format_number(6) }}</span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
+                                        {{ trade.timestamp | format_datetime }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-8">
+                        <svg class="mx-auto h-8 w-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                        <p class="text-sm text-gray-500 mt-2">Henüz işlem gerçekleşmedi</p>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Trade Statistics -->
+            {% if trade_stats %}
+            <div class="card">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">İşlem İstatistikleri</h3>
+                
+                <div class="grid grid-cols-2 md:grid-cols-6 gap-4">
+                    <div class="text-center">
+                        <p class="text-2xl font-semibold text-gray-900">{{ trade_stats.total_trades }}</p>
+                        <p class="text-sm text-gray-600">Toplam İşlem</p>
+                    </div>
+                    
+                    <div class="text-center">
+                        <p class="text-2xl font-semibold text-green-600">{{ trade_stats.buy_trades }}</p>
+                        <p class="text-sm text-gray-600">Alım</p>
+                    </div>
+                    
+                    <div class="text-center">
+                        <p class="text-2xl font-semibold text-red-600">{{ trade_stats.sell_trades }}</p>
+                        <p class="text-sm text-gray-600">Satım</p>
+                    </div>
+                    
+                    <div class="text-center">
+                        <p class="text-2xl font-semibold text-gray-900">${{ trade_stats.avg_price | format_number(2) }}</p>
+                        <p class="text-sm text-gray-600">Ort. Fiyat</p>
+                    </div>
+                    
+                    <div class="text-center">
+                        <p class="text-2xl font-semibold {% if trade_stats.realized_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                            {% if trade_stats.realized_pnl >= 0 %}+{% endif %} ${{ trade_stats.realized_pnl | format_number(2) }}
+                        </p>
+                        <p class="text-sm text-gray-600">Gerçekleşen K/Z</p>
+                    </div>
+                    
+                    <div class="text-center">
+                        <p class="text-2xl font-semibold {% if trade_stats.win_rate >= 50 %}text-green-600{% else %}text-red-600{% endif %}">
+                            {{ trade_stats.win_rate | format_number(1) }}%
+                        </p>
+                        <p class="text-sm text-gray-600">Başarı Oranı</p>
+                    </div>
+                </div>
+
+                <!-- Detaylı Kar-Zarar Analizi -->
+                {% if trade_stats.profit_trades > 0 or trade_stats.loss_trades > 0 %}
+                <div class="mt-6 pt-6 border-t border-gray-200">
+                    <h4 class="text-md font-medium text-gray-900 mb-3">Detaylı Kar-Zarar Analizi</h4>
+                    
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <div class="text-center p-3 bg-green-50 rounded-lg">
+                            <p class="text-lg font-semibold text-green-600">${{ trade_stats.total_profit | format_number(2) }}</p>
+                            <p class="text-xs text-green-700">Toplam Kar</p>
+                            <p class="text-xs text-gray-500">{{ trade_stats.profit_trades }} işlem</p>
+                        </div>
+                        
+                        <div class="text-center p-3 bg-red-50 rounded-lg">
+                            <p class="text-lg font-semibold text-red-600">-${{ trade_stats.total_loss | format_number(2) }}</p>
+                            <p class="text-xs text-red-700">Toplam Zarar</p>
+                            <p class="text-xs text-gray-500">{{ trade_stats.loss_trades }} işlem</p>
+                        </div>
+                        
+                        <div class="text-center p-3 bg-blue-50 rounded-lg">
+                            <p class="text-lg font-semibold text-blue-600">${{ trade_stats.total_volume | format_number(2) }}</p>
+                            <p class="text-xs text-blue-700">Toplam Hacim</p>
+                            <p class="text-xs text-gray-500">Miktar</p>
+                        </div>
+                        
+                        <div class="text-center p-3 bg-gray-50 rounded-lg">
+                            <p class="text-lg font-semibold text-gray-900">${{ trade_stats.total_notional | format_number(2) }}</p>
+                            <p class="text-xs text-gray-700">Toplam USDT</p>
+                            <p class="text-xs text-gray-500">İşlem Tutarı</p>
+                        </div>
+                        
+                        <div class="text-center p-3 bg-orange-50 rounded-lg">
+                            <p class="text-lg font-semibold text-orange-600">${{ trade_stats.open_buy_value | format_number(2) }}</p>
+                            <p class="text-xs text-orange-700">Açık Pozisyon</p>
+                            <p class="text-xs text-gray-500">Bekleyen Alımlar</p>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Auto-refresh strategy detail every 1 minute
+    setInterval(function() {
+        htmx.trigger(document.body, 'refresh');
+    }, 60000);
+</script>
+{% endblock %}

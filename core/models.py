@@ -1,0 +1,357 @@
+"""
+Pydantic modelleri - Trading bot için veri yapıları
+"""
+
+from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+from enum import Enum
+
+
+class OrderSide(str, Enum):
+    """Emir yönü"""
+    BUY = "buy"
+    SELL = "sell"
+
+
+class OrderStatus(str, Enum):
+    """Emir durumu"""
+    PENDING = "pending"
+    FILLED = "filled"
+    CANCELLED = "cancelled"
+    REJECTED = "rejected"
+
+
+class OTTMode(str, Enum):
+    """OTT modu"""
+    AL = "AL"
+    SAT = "SAT"
+
+
+class StrategyType(str, Enum):
+    """Strateji türleri"""
+    GRID_OTT = "grid_ott"
+    DCA_OTT = "dca_ott"
+    BOL_GRID = "bol_grid"
+    BOLLINGER_BANDS = "bollinger_bands"
+    RSI_SCALPING = "rsi_scalping"
+    MACD_TREND = "macd_trend"
+
+
+class Timeframe(str, Enum):
+    """Zaman dilimleri"""
+    M1 = "1m"
+    M5 = "5m"
+    M15 = "15m"
+    H1 = "1h"
+    D1 = "1d"
+
+
+class Symbol(str, Enum):
+    """Desteklenen semboller"""
+    BTCUSDT = "BTCUSDT"
+    ETHUSDT = "ETHUSDT"
+    AVAXUSDT = "AVAXUSDT"
+    SOLUSDT = "SOLUSDT"
+    DOGEUSDT = "DOGEUSDT"
+
+
+class MarketInfo(BaseModel):
+    """Market metadata - Binance'ten alınan tick/step size bilgileri"""
+    symbol: str
+    current_price: float  # Güncel fiyat
+    volume_24h: float = 0.0  # 24 saatlik hacim
+    price_change_24h: float = 0.0  # 24 saatlik fiyat değişimi
+    tick_size: float  # Minimum fiyat adımı
+    step_size: float  # Minimum miktar adımı
+    min_qty: float   # Minimum işlem miktarı
+    min_notional: float  # Minimum işlem tutarı
+
+
+class OTTParams(BaseModel):
+    """OTT parametreleri"""
+    period: int = Field(default=14, ge=1, le=200)
+    opt: float = Field(default=2.0, ge=0.1, le=10.0)
+
+
+class OpenOrder(BaseModel):
+    """Açık emir bilgisi"""
+    order_id: str
+    side: OrderSide
+    price: Optional[float] = None  # Market emirlerde None olabilir
+    quantity: float
+    z: int  # Grid kademesi
+    timestamp: datetime
+    strategy_specific_data: Dict[str, Any] = Field(default_factory=dict)  # Strategy özel verileri
+
+
+class DCAPosition(BaseModel):
+    """DCA stratejisi için pozisyon bilgisi"""
+    buy_price: float
+    quantity: float
+    timestamp: datetime
+    order_id: Optional[str] = None
+
+
+class State(BaseModel):
+    """Strateji durumu - state.json'da saklanır"""
+    strategy_id: str
+    strategy_type: StrategyType = Field(default=StrategyType.GRID_OTT)
+    
+    # Grid+OTT için legacy alanlar
+    gf: Optional[float] = None  # Giriş fiyatı (Grid Foundation)
+    
+    # DCA+OTT için alanlar
+    dca_positions: List[DCAPosition] = Field(default_factory=list)
+    avg_cost: Optional[float] = None  # Ortalama maliyet
+    total_quantity: float = Field(default=0.0)  # Toplam miktar
+    cycle_number: int = Field(default=0)  # Döngü sayısı (D0, D1, D2...)
+    cycle_trade_count: int = Field(default=0)  # Döngü içi işlem sayısı (1, 2, 3...)
+    
+    # Genel alanlar
+    open_orders: List[OpenOrder] = Field(default_factory=list)
+    last_bar_timestamp: Optional[datetime] = None
+    last_ott_mode: Optional[OTTMode] = None
+    total_buy_orders: int = 0
+    total_sell_orders: int = 0
+    last_update: datetime = Field(default_factory=datetime.now)
+    
+    # Strateji özel veriler
+    custom_data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class Trade(BaseModel):
+    """İşlem kaydı - CSV'ye yazılır"""
+    timestamp: datetime
+    strategy_id: str
+    side: OrderSide
+    price: float  # Gerçekleşen ortalama fiyat
+    quantity: float
+    z: int  # Grid kademesi (Grid+OTT için) veya döngü bilgisi (DCA+OTT için)
+    notional: float  # USDT tutarı
+    gf_before: float  # İşlem öncesi GF
+    gf_after: float   # İşlem sonrası GF
+    commission: Optional[float] = None
+    order_id: Optional[str] = None
+    limit_price: Optional[float] = None  # Limit emir fiyatı (referans)
+    strategy_specific_data: Dict[str, Any] = Field(default_factory=dict)  # Strategy özel verileri
+    cycle_info: Optional[str] = None  # DCA döngü bilgisi (D1-1, D1-2 vb.)
+
+
+class Strategy(BaseModel):
+    """Ana strateji modeli - strategies.json'da saklanır"""
+    id: str = Field(..., description="Benzersiz strateji ID'si")
+    name: str = Field(..., description="Strateji adı")
+    symbol: Symbol = Field(..., description="İşlem çifti")
+    timeframe: Timeframe = Field(..., description="Zaman dilimi")
+    strategy_type: StrategyType = Field(default=StrategyType.GRID_OTT, description="Strateji türü")
+    
+    # Genel parametreler - strateji tipine göre kullanılır
+    parameters: Dict[str, Any] = Field(default_factory=dict, description="Strateji özel parametreleri")
+    
+    # Grid+OTT için legacy alanlar (geriye uyumluluk)
+    y: Optional[float] = Field(default=None, gt=0, description="Grid aralığı (fiyat birimi)")
+    usdt_grid: Optional[float] = Field(default=None, gt=0, description="Her grid katı için USDT tutarı")
+    gf: Optional[float] = Field(default=None, ge=0, description="Giriş fiyatı (0 ise otomatik)")
+    
+    # Fiyat limitleri
+    price_min: Optional[float] = Field(default=None, ge=0, description="Minimum işlem fiyatı (0 ise limit yok)")
+    price_max: Optional[float] = Field(default=None, ge=0, description="Maksimum işlem fiyatı (0 ise limit yok)")
+    
+    # OTT parametreleri (çoğu strateji türü kullanabilir)
+    ott: OTTParams = Field(default_factory=OTTParams)
+    
+    # Durum
+    active: bool = Field(default=False, description="Strateji aktif mi?")
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: datetime = Field(default_factory=datetime.now)
+    
+    # İstatistikler
+    total_trades: int = Field(default=0)
+    total_profit: float = Field(default=0.0)
+
+
+class StrategyCreate(BaseModel):
+    """Yeni strateji oluşturma için model"""
+    name: str = Field(..., min_length=1, max_length=100)
+    symbol: Symbol
+    timeframe: Timeframe
+    strategy_type: StrategyType = Field(default=StrategyType.GRID_OTT)
+    
+    # Grid+OTT için (opsiyonel)
+    y: Optional[float] = Field(default=None, gt=0)
+    usdt_grid: Optional[float] = Field(default=None, gt=0)
+    gf: Optional[float] = Field(default=None, ge=0)
+    
+    # DCA+OTT için (opsiyonel)
+    base_usdt: Optional[float] = Field(default=None, gt=0)
+    dca_multiplier: Optional[float] = Field(default=None, ge=1.0, le=5.0)
+    min_drop_pct: Optional[float] = Field(default=None, ge=0.5, le=20.0)
+    
+    # BOL-Grid için (opsiyonel)
+    initial_usdt: Optional[float] = Field(default=None, gt=0)
+    min_profit_pct: Optional[float] = Field(default=None, ge=0.1, le=10.0)
+    bollinger_period: Optional[int] = Field(default=None, ge=20, le=500)
+    bollinger_std: Optional[float] = Field(default=None, ge=1.0, le=3.0)
+    
+    # Genel parametreler
+    parameters: Dict[str, Any] = Field(default_factory=dict)
+    price_min: Optional[float] = Field(default=None, ge=0)
+    price_max: Optional[float] = Field(default=None, ge=0)
+    ott_period: int = Field(default=14, ge=1, le=200)
+    ott_opt: float = Field(default=2.0, ge=0.1, le=10.0)
+
+
+class StrategyUpdate(BaseModel):
+    """Strateji güncelleme için model"""
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    price_min: Optional[float] = Field(None, ge=0)
+    price_max: Optional[float] = Field(None, ge=0)
+    y: Optional[float] = Field(None, gt=0)
+    usdt_grid: Optional[float] = Field(None, gt=0)
+    gf: Optional[float] = Field(None, ge=0)
+    ott_period: Optional[int] = Field(None, ge=1, le=200)
+    ott_opt: Optional[float] = Field(None, ge=0.1, le=10.0)
+
+
+class StrategyResponse(BaseModel):
+    """API response için strateji modeli"""
+    strategy: Strategy
+    state: Optional[State] = None
+    current_price: Optional[float] = None
+    ott_mode: Optional[OTTMode] = None
+    delta: Optional[float] = None
+    target_z: Optional[int] = None
+    target_price: Optional[float] = None
+
+
+class DashboardStats(BaseModel):
+    """Dashboard istatistikleri"""
+    total_strategies: int
+    active_strategies: int
+    total_open_orders: int
+    total_trades_today: int
+    total_profit_today: float
+
+
+class GridSignal(BaseModel):
+    """Grid sinyal bilgisi"""
+    should_trade: bool
+    side: Optional[OrderSide] = None
+    z: Optional[int] = None
+    target_price: Optional[float] = None
+    quantity: Optional[float] = None
+    delta: Optional[float] = None
+    reason: str = ""
+
+
+class TradingSignal(BaseModel):
+    """Genel trading sinyal bilgisi - tüm strateji türleri için"""
+    should_trade: bool
+    side: Optional[OrderSide] = None
+    target_price: Optional[float] = None
+    quantity: Optional[float] = None
+    reason: str = ""
+    strategy_specific_data: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OTTResult(BaseModel):
+    """OTT hesaplama sonucu"""
+    mode: OTTMode
+    baseline: float
+    upper: float
+    lower: float
+    current_price: float
+
+
+class PartialFillRecord(BaseModel):
+    """Kısmi gerçekleşen emir kaydı - monitoring için"""
+    timestamp: datetime
+    strategy_id: str
+    order_id: str
+    side: OrderSide
+    original_quantity: float
+    filled_quantity: float
+    remaining_quantity: float
+    price: float
+    cancel_reason: str = "partial_fill_timeout"
+
+
+class OrderManagementConfig(BaseModel):
+    """Emir yönetim konfigürasyonu"""
+    timeout_minutes: int = 3
+    block_when_open_orders: bool = True
+    cancel_partial_fills: bool = True
+    max_partial_fills_per_day: int = 50
+
+
+class BollingerBands(BaseModel):
+    """Bollinger Bands hesaplama sonucu"""
+    upper: float
+    middle: float
+    lower: float
+
+class BollingerPosition(BaseModel):
+    """BOL-Grid stratejisinde pozisyon"""
+    quantity: float
+    price: float
+    timestamp: datetime
+
+class BollingerCrossSignal(str, Enum):
+    """Bollinger Band cross sinyalleri"""
+    CROSS_ABOVE_LOWER = "cross_above_lower"
+    CROSS_BELOW_MIDDLE = "cross_below_middle"
+    CROSS_BELOW_UPPER = "cross_below_upper"
+    NO_CROSS = "no_cross"
+
+class OrderLog(BaseModel):
+    """Emir log kaydı - tüm stratejiler için ortak log dosyasında"""
+    timestamp: datetime
+    strategy_id: str
+    strategy_type: str
+    order_id: str
+    symbol: str
+    side: OrderSide
+    order_type: str  # 'market', 'limit'
+    quantity: float
+    price: Optional[float] = None  # Market emirler için None
+    limit_price: Optional[float] = None  # Limit emirler için
+    status: str  # 'sent', 'received', 'filled', 'cancelled', 'partial', 'error'
+    action: str  # 'create', 'cancel', 'check', 'fill'
+    message: str
+    binance_response: Optional[Dict] = None  # Binance'den gelen yanıt
+    error: Optional[str] = None
+    execution_time_ms: Optional[int] = None  # İşlem süresi
+    grid_level: Optional[int] = None  # Grid stratejiler için kademe
+    notional: Optional[float] = None  # USDT tutarı
+    cycle_info: Optional[str] = None  # BOL-Grid için döngü bilgisi
+
+class OrderLogManager:
+    """Emir loglarını yöneten sınıf"""
+    
+    def __init__(self, log_file: str = "data/order_logs.csv"):
+        self.log_file = log_file
+        self._ensure_log_file()
+    
+    def _ensure_log_file(self):
+        """Log dosyası header'ını oluştur"""
+        import os
+        os.makedirs(os.path.dirname(self.log_file), exist_ok=True)
+        
+        if not os.path.exists(self.log_file):
+            header = "timestamp,strategy_id,strategy_type,order_id,symbol,side,order_type,quantity,price,limit_price,status,action,message,error,execution_time_ms,grid_level,notional\n"
+            with open(self.log_file, 'w', encoding='utf-8') as f:
+                f.write(header)
+    
+    def log_order_action(self, order_log: OrderLog):
+        """Emir log kaydı ekle"""
+        try:
+            # CSV satırı oluştur
+            csv_line = f"{order_log.timestamp.isoformat()},{order_log.strategy_id},{order_log.strategy_type},{order_log.order_id},{order_log.symbol},{order_log.side.value},{order_log.order_type},{order_log.quantity},{order_log.price or ''},{order_log.limit_price or ''},{order_log.status},{order_log.action},{order_log.message.replace(',', ';')},{order_log.error or ''},{order_log.execution_time_ms or ''},{order_log.grid_level or ''},{order_log.notional or ''}\n"
+            
+            # Dosyaya append et
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(csv_line)
+            
+        except Exception as e:
+            print(f"Order log kaydetme hatası: {e}")  # logger yerine print kullan

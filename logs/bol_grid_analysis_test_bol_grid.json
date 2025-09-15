@@ -1,0 +1,38 @@
+{
+  "strategy_id": "test_bol_grid",
+  "start_time": "2025-09-08T00:28:56.986741",
+  "entries": [
+    {
+      "timestamp": "00:28:56.986",
+      "price_analysis": {
+        "current_price": 0.224,
+        "price_vs_upper_pct": -3.8185276706608358,
+        "price_vs_middle_pct": -3.2188377619356165,
+        "price_vs_lower_pct": -2.6116228211902937,
+        "band_width_pct": 1.2469967327424456
+      },
+      "bollinger_bands": {
+        "upper": 0.23289308696896618,
+        "middle": 0.23145,
+        "lower": 0.2300069130310338
+      },
+      "cross_signal": "cross_below_middle",
+      "position_analysis": {
+        "positions_count": 0,
+        "total_quantity": 0,
+        "total_value": 0.0,
+        "average_cost": 0.0,
+        "profit_loss": 0,
+        "profit_pct": 0
+      },
+      "decision": {
+        "action": "no_signal",
+        "reason": "BOL-Grid sinyal koşulları sağlanmadı",
+        "cross_signal": "cross_below_middle",
+        "positions_exist": false,
+        "current_price": 0.224
+      }
+    }
+  ],
+  "last_update": "2025-09-08T00:28:56.986788"
+}

@@ -1,0 +1,24 @@
+{
+  "strategy_id": "2fdb1080",
+  "strategy_type": "dca_ott",
+  "gf": 0.0,
+  "dca_positions": [],
+  "avg_cost": null,
+  "total_quantity": 0.0,
+  "open_orders": [
+    {
+      "order_id": "32159901595",
+      "side": "buy",
+      "price": 24.405,
+      "quantity": 2.0,
+      "z": 0,
+      "timestamp": "2025-08-27T10:51:06.325154+00:00"
+    }
+  ],
+  "last_bar_timestamp": "2025-08-27T10:45:00+00:00",
+  "last_ott_mode": "AL",
+  "total_buy_orders": 0,
+  "total_sell_orders": 0,
+  "last_update": "2025-08-27T10:51:06.612596+00:00",
+  "custom_data": {}
+}

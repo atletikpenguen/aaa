@@ -1,0 +1,19 @@
+{
+  "strategy_id": "8b1304a4",
+  "strategy_type": "grid_ott",
+  "gf": 115288.1,
+  "dca_positions": [],
+  "avg_cost": null,
+  "total_quantity": 0.0,
+  "cycle_number": 0,
+  "cycle_trade_count": 0,
+  "open_orders": [],
+  "last_bar_timestamp": "2025-09-15T20:30:00+00:00",
+  "last_ott_mode": "AL",
+  "total_buy_orders": 0,
+  "total_sell_orders": 0,
+  "last_update": "2025-09-15T20:45:41.244421+00:00",
+  "custom_data": {
+    "gf_initialized": true
+  }
+}
