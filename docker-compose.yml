@@ -1,0 +1,54 @@
+# ===============================================
+# Docker Compose - Trading Bot
+# Bu dosya trading bot'u kolayca çalıştırmak için oluşturuldu
+# VPS'de güvenli ve stabil çalışma için optimize edildi
+# ===============================================
+
+version: '3.8'
+
+services:
+  trading-bot:
+    build: .
+    container_name: trading-bot
+    restart: unless-stopped
+    
+    # Port mapping
+    ports:
+      - "8000:8000"
+    
+    # Environment variables (.env dosyasından okunur)
+    env_file:
+      - .env
+    
+    # Volume mounts (veri ve loglar korunur)
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./.env:/app/.env:ro
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    # Resource limits (VPS için optimize)
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
+    
+    # Network
+    networks:
+      - trading-network
+
+# Network tanımı
+networks:
+  trading-network:
+    driver: bridge

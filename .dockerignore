@@ -1,0 +1,95 @@
+# ===============================================
+# Docker Ignore File - Trading Bot
+# Bu dosya Docker build sırasında hangi dosyaların hariç tutulacağını belirler
+# ===============================================
+
+# Python cache ve bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE ve editor dosyaları
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS dosyaları
+.DS_Store
+Thumbs.db
+
+# Log dosyaları (container içinde oluşturulacak)
+logs/*.log
+*.log
+
+# Data dosyaları (volume olarak mount edilecek)
+data/
+*.csv
+*.json
+*.xlsx
+
+# Git
+.git/
+.gitignore
+
+# Docker dosyaları
+Dockerfile
+.dockerignore
+docker-compose.yml
+
+# Build dosyaları
+*.spec
+build.sh
+startup.sh
+trader_bot
+bot.pid
+
+# Test dosyaları
+test_*.py
+*_test.py
+test_*.csv
+test_*.xlsx
+
+# Backup dosyaları
+*.backup
+*.bak
+*.save
+
+# Zip dosyaları
+*.zip
+*.tar.gz
+
+# PID dosyaları
+*.pid
+
+# Nohup dosyaları
+nohup.out
+
+# Service dosyaları
+*.service
+
+# Update scriptleri
+update.sh
