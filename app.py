@@ -10,7 +10,7 @@ from typing import List, Dict, Optional
 from pathlib import Path
 import pytz
 
-from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Form, status
+from fastapi import FastAPI, Request, HTTPException, BackgroundTasks, Form, status, UploadFile, File
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from sse_starlette.sse import EventSourceResponse
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +29,7 @@ from core.binance import binance_client
 from core.strategy_engine import strategy_engine
 from core.utils import logger, generate_strategy_id, validate_symbol, validate_timeframe, setup_logger, clear_terminal_manual
 from core.bol_grid_debug import get_bol_grid_debugger
+from core.excel_backtest_engine import excel_backtest_engine
 
 # Environment variables yükle
 
@@ -46,14 +47,20 @@ class BackgroundTaskManager:
     
     async def start(self):
         """Background task manager'ı başlat"""
+        logger.info("🔧 DEBUG: BackgroundTaskManager.start() çağrıldı")
         self.running = True
         logger.info("Background task manager başlatıldı")
         
-        # Ana koordinatör task'ını başlat
-        self.tasks['coordinator'] = asyncio.create_task(self._coordinator_loop())
-        
-        # ⚡ YENİ: Order monitor task'ını başlat
-        self.tasks['order_monitor'] = asyncio.create_task(self._order_monitor_loop())
+        # Ana TRADING LOOP task'ını başlat
+        logger.info("🔧 DEBUG: Ana trading loop task'ı oluşturuluyor...")
+        try:
+            self.tasks['main_loop'] = asyncio.create_task(self._main_trading_loop())
+            logger.info("🔧 DEBUG: Ana trading loop task'ı oluşturuldu ve başlatıldı")
+        except Exception as e:
+            logger.error(f"🔧 DEBUG: Task oluşturma hatası: {e}")
+            import traceback
+            logger.error(f"🔧 DEBUG: Traceback: {traceback.format_exc()}")
+            raise
     
     async def stop(self):
         """Background task manager'ı durdur"""
@@ -85,195 +92,119 @@ class BackgroundTaskManager:
         """Bekletme durumunu kontrol et"""
         return self.paused
     
-    async def _coordinator_loop(self):
-        """Ana koordinatör döngüsü - aktif stratejileri işle"""
-        while self.running:
-            try:
-                # Bekletme durumunda ise sadece bekle
-                if self.paused:
-                    await asyncio.sleep(5)  # 5 saniye bekle
-                    continue
-                
-                # Aktif stratejileri al
-                strategies = await storage.load_strategies()
-                active_strategies = [s for s in strategies if s.active]
-                
-                # Her aktif strateji için task başlat/kontrol et
-                for strategy in active_strategies:
-                    task_name = f"strategy_{strategy.id}"
-                    
-                    # Task yoksa veya bitmişse yeni başlat
-                    if task_name not in self.tasks or self.tasks[task_name].done():
-                        self.tasks[task_name] = asyncio.create_task(
-                            self._strategy_loop(strategy)
-                        )
-                        logger.info(f"Strateji task başlatıldı: {strategy.id}")
-                
-                # Pasif olan stratejiler için task'ları durdur
-                current_task_names = set(self.tasks.keys())
-                for task_name in current_task_names:
-                    if task_name.startswith('strategy_'):
-                        strategy_id = task_name.replace('strategy_', '')
-                        strategy_exists = any(s.id == strategy_id and s.active for s in active_strategies)
-                        
-                        if not strategy_exists and not self.tasks[task_name].done():
-                            self.tasks[task_name].cancel()
-                            try:
-                                await self.tasks[task_name]
-                            except asyncio.CancelledError:
-                                pass
-                            del self.tasks[task_name]
-                            logger.info(f"Strateji task durduruldu: {strategy_id}")
-                
-                # 5 dakika bekle - coordinator çok sık çalışmasın
-                await asyncio.sleep(300)
-                
-            except Exception as e:
-                logger.error(f"Coordinator loop hatası: {e}")
-                await asyncio.sleep(30)  # Hata durumunda daha uzun bekle
-    
-    async def _order_monitor_loop(self):
+    async def _main_trading_loop(self):
         """
-        ⚡ Order Monitor - 30 saniyede bir emirleri kontrol et
-        
-        🎯 Hedef:
-        - Hızlı fill detection (30s)
-        - Timeout kontrolü (3dk)
-        - Partial fill iptal
+        YENİ ANA TRADING DÖNGÜSÜ
+        Tüm strateji tick'lerini ve order reconciliation'ı yönetir.
         """
-        logger.info("🔍 Order Monitor başlatıldı - 30s aralıklarla kontrol")
-        
-        while self.running:
-            try:
-                # Aktif stratejileri al
-                strategies = await storage.load_strategies()
-                active_strategies = [s for s in strategies if s.active]
-                
-                # Monitor istatistikleri
-                total_orders = 0
-                total_fills = 0
-                total_timeouts = 0
-                total_partials = 0
-                
-                for strategy in active_strategies:
-                    try:
-                        # State'i yükle
-                        state = await storage.load_state(strategy.id)
-                        if not state or not state.open_orders:
-                            continue
-                        
-                        total_orders += len(state.open_orders)
-                        
-                        # Order lifecycle management (unified strategy engine'den)
-                        await strategy_engine.manage_order_lifecycle(strategy, state)
-                        
-                        # Fill kontrolü (unified)
-                        filled_trades = await strategy_engine.check_order_fills(strategy, state)
-                        total_fills += len(filled_trades)
-                        
-                        # State güncellemelerini kaydet
-                        if filled_trades:
-                            await storage.save_state(state)
-                            
-                    except Exception as e:
-                        logger.error(f"❌ Order monitor {strategy.id} hatası: {e}")
-                
-                # Özet log (sadece aktivite varsa)
-                if total_orders > 0:
-                    logger.debug(f"🔍 Order Monitor: {len(active_strategies)} strateji, {total_orders} emir, {total_fills} fill")
-                
-                # 30 saniye bekle
-                await asyncio.sleep(30)
-                
-            except Exception as e:
-                logger.error(f"❌ Order monitor loop hatası: {e}")
-                await asyncio.sleep(60)  # Hata durumunda 1 dakika bekle
-    
-    async def _strategy_loop(self, strategy: Strategy):
-        """Tek strateji için döngü"""
-        strategy_id = strategy.id
-        active_check_counter = 0
-        last_minute_report = datetime.now()
-        
+        # --- DOĞRUDAN DEBUG ---
         try:
-            # Grid engine'de stratejiyi aktif yap
-            await strategy_engine.start_strategy(strategy_id)
+            with open("loop_debug.txt", "w") as f:
+                f.write(f"Loop function entered at {datetime.now()}")
+        except Exception as e:
+            with open("loop_debug_error.txt", "w") as f:
+                f.write(f"Failed to write debug file: {e}")
+        
+        # Logger test
+        try:
+            with open("logger_test.txt", "w") as f:
+                f.write(f"Logger test at {datetime.now()}")
+                f.write(f"\nLogger object: {logger}")
+                f.write(f"\nLogger level: {logger.level}")
+                f.write(f"\nLogger handlers: {logger.handlers}")
+        except Exception as e:
+            with open("logger_test_error.txt", "w") as f:
+                f.write(f"Logger test failed: {e}")
+        # --- BİTTİ ---
+
+        try:
+            logger.info("🚀 YENİ ANA TRADING DÖNGÜSÜ başlatıldı.")
+            logger.info("🔧 DEBUG: Ana trading loop başladı, while döngüsüne giriyor...")
+            logger.info(f"🔧 DEBUG: self.running = {self.running}")
+            logger.info(f"🔧 DEBUG: self.paused = {self.paused}")
+            
+            # Import kontrolü
+            logger.info("🔧 DEBUG: Import kontrolü başlıyor...")
+            try:
+                from core.storage import storage
+                from core.strategy_engine import strategy_engine
+                logger.info("🔧 DEBUG: Import'lar başarılı")
+            except Exception as e:
+                logger.error(f"🔧 DEBUG: Import hatası: {e}")
+                import traceback
+                logger.error(f"🔧 DEBUG: Import traceback: {traceback.format_exc()}")
+                return
             
             while self.running:
+                logger.info("🔧 DEBUG: While döngüsü içinde, self.running = True")
                 try:
-                    # Her 10 döngüde bir strateji aktif mi kontrol et (gereksiz storage çağrılarını azalt)
-                    if active_check_counter % 10 == 0:
-                        current_strategy = await storage.get_strategy(strategy_id)
-                        if not current_strategy or not current_strategy.active:
-                            logger.info(f"Strateji artık aktif değil: {strategy_id}")
-                            break
-                        strategy = current_strategy  # Güncel stratejiyi kullan
+                    # Bekletme durumunda ise sadece bekle
+                    if self.paused:
+                        await asyncio.sleep(5)
+                        continue
+
+                    # Aktif stratejileri al
+                    logger.info("🔧 DEBUG: Stratejiler yükleniyor...")
+                    strategies = await storage.load_strategies()
+                    logger.info(f"🔧 DEBUG: {len(strategies)} strateji yüklendi")
+                    active_strategies = [s for s in strategies if s.active]
+                    logger.info(f"🔧 DEBUG: {len(active_strategies)} aktif strateji bulundu")
                     
-                    active_check_counter += 1
-                    
-                    # Strategy tick işle
-                    # Strategy engine ile tick işle (unified)
-                    # State'i yükle
-                    state = await storage.load_state(strategy.id)
-                    if not state:
-                        logger.warning(f"State bulunamadı: {strategy.id}")
+                    if not active_strategies:
+                        logger.info("🔧 DEBUG: Aktif strateji yok, 60 saniye bekleniyor.")
                         await asyncio.sleep(60)
                         continue
+
+                    logger.info(f"🔄 Ana döngü başlıyor. {len(active_strategies)} aktif strateji işlenecek.")
+
+                    for strategy in active_strategies:
+                        logger.info(f"🔧 DEBUG: Strateji işleniyor: {strategy.id} ({strategy.name})")
+                        # 1. Bekleyen Emirleri Kontrol Et (Reconciliation)
+                        try:
+                            logger.info(f"🔧 DEBUG: [{strategy.id}] OrderManager alınıyor...")
+                            order_manager = strategy_engine.get_order_manager(strategy.id)
+                            logger.info(f"🔧 DEBUG: [{strategy.id}] OrderManager alındı, initialize kontrolü...")
+                            if not hasattr(order_manager, 'strategy') or order_manager.strategy is None:
+                                logger.info(f"🔧 DEBUG: [{strategy.id}] OrderManager initialize ediliyor...")
+                                await order_manager.initialize()
+                                logger.info(f"🔧 DEBUG: [{strategy.id}] OrderManager initialize edildi")
+                            
+                            # ÖNEMLİ: Her zaman reconcile_orders çağır (pending orders kontrolü içinde yapılacak)
+                            logger.info(f"🔍 [{strategy.id}] Bekleyen emirler için mutabakat yapılıyor...")
+                            await order_manager.reconcile_orders()
+                            logger.info(f"🔧 DEBUG: [{strategy.id}] Mutabakat tamamlandı")
+                        except Exception as e:
+                            logger.error(f"❌ [{strategy.id}] Emir mutabakatı sırasında hata: {e}")
+
+                        # 2. Yeni Sinyal Üret ve İşle (Tick)
+                        try:
+                            logger.info(f"🔧 DEBUG: [{strategy.id}] Yeni sinyal kontrolü başlıyor...")
+                            # Eğer hala bekleyen emir varsa, yeni sinyal işleme (önlem)
+                            if order_manager.has_pending_orders():
+                                logger.info(f"⏳ [{strategy.id}] Mutabakat sonrası hala bekleyen emir var, yeni sinyal işlenmiyor.")
+                                continue
+                            
+                            logger.info(f"📈 [{strategy.id}] Yeni sinyal için işleniyor...")
+                            result = await strategy_engine.process_strategy_tick(strategy)
+                            logger.info(f"🔧 DEBUG: [{strategy.id}] process_strategy_tick sonucu: {result}")
+
+                        except Exception as e:
+                            logger.error(f"❌ [{strategy.id}] Strateji tick işlemi sırasında hata: {e}")
                     
-                    # Market verilerini al
-                    current_price = await binance_client.get_current_price(strategy.symbol.value)
-                    if not current_price:
-                        logger.warning(f"Fiyat alınamadı: {strategy.symbol.value}")
-                        await asyncio.sleep(60)
-                        continue
-                    
-                    # OHLCV verilerini al
-                    ohlcv_data = await binance_client.fetch_ohlcv(
-                        strategy.symbol.value,
-                        strategy.timeframe.value,
-                        limit=max(100, strategy.ott.period + 10)
-                    )
-                    
-                    market_data = {
-                        'price': current_price,
-                        'klines': ohlcv_data,
-                        'volume_24h': 0.0,  # Şu an için 0
-                        'price_change_24h': 0.0  # Şu an için 0
-                    }
-                    
-                    # Strategy tick işle
-                    result = await strategy_engine.process_strategy_tick(strategy)
-                    
-                    # process_strategy_tick boolean döndürüyor, dict'e çevir
-                    if result:
-                        # Başarılı işlem
-                        logger.debug(f"Strateji işlendi: {strategy_id}")
-                        
-                        # Dakikada bir durum raporu
-                        current_time = datetime.now()
-                        if (current_time - last_minute_report).total_seconds() >= 60:
-                            await self._log_strategy_status(strategy, {'status': 'processed'})
-                            last_minute_report = current_time
-                        
-                        # Timeframe'e göre bekleme süresi
-                        sleep_time = self._get_sleep_time(strategy.timeframe.value)
-                        await asyncio.sleep(sleep_time)
-                    else:
-                        # İşlem yapılmadı, normal bekleme
-                        sleep_time = self._get_sleep_time(strategy.timeframe.value)
-                        await asyncio.sleep(sleep_time)
-                
-                except Exception as e:
-                    logger.error(f"Strateji loop hatası {strategy_id}: {e}")
+                    # Döngü sonunda bekleme
+                    # Timeframe'e göre değil, sabit bir süre beklemek daha basit ve güvenilir.
+                    logger.info(f"✅ Ana döngü tamamlandı. 60 saniye bekleniyor.")
                     await asyncio.sleep(60)
-        
-        except asyncio.CancelledError:
-            logger.info(f"Strateji loop iptal edildi: {strategy_id}")
+
+                except Exception as e:
+                    logger.error(f"CRITICAL: Ana trading döngüsünde kritik hata: {e}")
+                    import traceback
+                    logger.error(f"CRITICAL: Traceback: {traceback.format_exc()}")
+                    await asyncio.sleep(120)  # Kritik hatada daha uzun bekle
         except Exception as e:
-            logger.error(f"Strateji loop genel hatası {strategy_id}: {e}")
-        finally:
-            # Grid engine'de stratejiyi pasif yap
-            await strategy_engine.stop_strategy(strategy_id)
+            logger.error(f"CRITICAL: _main_trading_loop başlatma hatası: {e}")
+            import traceback
+            logger.error(f"CRITICAL: Traceback: {traceback.format_exc()}")
     
     def _get_sleep_time(self, timeframe: str) -> int:
         """Timeframe'e göre uygun bekleme süresi - tüm timeframe'ler için 1 dakika"""
@@ -323,8 +254,14 @@ task_manager = BackgroundTaskManager()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """App lifecycle - startup ve shutdown"""
+    # --- DOĞRUDAN DEBUG ---
+    with open("lifespan_debug.txt", "w") as f:
+        f.write(f"Lifespan entered at {datetime.now()}")
+    # --- BİTTİ ---
+
     # Startup
     logger.info("Trading bot başlatılıyor...")
+    logger.info("🔧 DEBUG: Lifespan başladı")
     
     # Eski log dosyalarını temizle (30 günden eski)
     try:
@@ -335,7 +272,14 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Log temizleme hatası: {e}")
     
     # Background task manager'ı başlat
-    await task_manager.start()
+    logger.info("🔧 DEBUG: Task manager başlatılıyor...")
+    try:
+        await task_manager.start()
+        logger.info("🔧 DEBUG: Task manager başlatıldı")
+    except Exception as e:
+        logger.error(f"🔧 DEBUG: Task manager başlatma hatası: {e}")
+        import traceback
+        logger.error(f"🔧 DEBUG: Traceback: {traceback.format_exc()}")
     
     yield
     
@@ -446,6 +390,104 @@ def get_istanbul_now():
     istanbul_tz = pytz.timezone('Europe/Istanbul')
     return datetime.now(istanbul_tz)
 
+async def calculate_profit_status():
+    """Tüm stratejilerin kar durumunu hesapla"""
+    try:
+        strategies = await storage.load_strategies()
+        if not strategies:
+            return {
+                'total_profit': 0.0,
+                'realized_profit': 0.0,
+                'unrealized_profit': 0.0,
+                'total_return_pct': 0.0,
+                'strategy_count': 0,
+                'profitable_strategies': 0,
+                'losing_strategies': 0
+            }
+        
+        total_profit = 0.0
+        realized_profit = 0.0
+        unrealized_profit = 0.0
+        profitable_count = 0
+        losing_count = 0
+        
+        for strategy in strategies:
+            try:
+                # Güncel fiyat bilgisini al
+                current_price = 0.0
+                try:
+                    # Binance'den güncel fiyat al
+                    ticker = await binance_client.get_symbol_ticker(strategy.symbol.value)
+                    if ticker:
+                        current_price = float(ticker['price'])
+                    else:
+                        current_price = 0.0
+                except Exception as price_error:
+                    logger.warning(f"Fiyat alma hatası {strategy.symbol}: {price_error}")
+                    # Fiyat alınamazsa 0 kullan (sadece realized PnL hesaplanır)
+                    current_price = 0.0
+                
+                # Strateji için PnL hesapla
+                pnl_data = await storage.calculate_new_pnl(strategy.id, current_price)
+                
+                if 'error' not in pnl_data:
+                    strategy_realized = pnl_data.get('realized_pnl', 0.0)
+                    strategy_unrealized = pnl_data.get('unrealized_pnl', 0.0)
+                    strategy_total = strategy_realized + strategy_unrealized
+                    
+                    # Toplam kar = realized + unrealized
+                    total_profit += strategy_total
+                    realized_profit += strategy_realized
+                    unrealized_profit += strategy_unrealized
+                    
+                    if strategy_total > 0:
+                        profitable_count += 1
+                    elif strategy_total < 0:
+                        losing_count += 1
+                        
+            except Exception as e:
+                logger.warning(f"Strateji kar hesaplama hatası {strategy.id}: {e}")
+                continue
+        
+        # Toplam getiri yüzdesi hesapla (1000 USD başlangıç sermayesi)
+        initial_capital = 1000.0 * len(strategies)
+        total_return_pct = (total_profit / initial_capital * 100) if initial_capital > 0 else 0.0
+        
+        # Debug: Matematiksel kontrol
+        calculated_total = realized_profit + unrealized_profit
+        difference = total_profit - calculated_total
+        
+        logger.info(f"=== KAR DURUMU DEBUG ===")
+        logger.info(f"Toplam Kar: ${total_profit:.2f}")
+        logger.info(f"Kapanmış Kar: ${realized_profit:.2f}")
+        logger.info(f"Açık Pozisyon Kar: ${unrealized_profit:.2f}")
+        logger.info(f"Hesaplanan Toplam: ${calculated_total:.2f}")
+        logger.info(f"Fark: ${difference:.2f}")
+        logger.info(f"Strateji Sayısı: {len(strategies)}")
+        logger.info("========================")
+        
+        return {
+            'total_profit': total_profit,
+            'realized_profit': realized_profit,
+            'unrealized_profit': unrealized_profit,
+            'total_return_pct': total_return_pct,
+            'strategy_count': len(strategies),
+            'profitable_strategies': profitable_count,
+            'losing_strategies': losing_count
+        }
+        
+    except Exception as e:
+        logger.error(f"Kar durumu hesaplama hatası: {e}")
+        return {
+            'total_profit': 0.0,
+            'realized_profit': 0.0,
+            'unrealized_profit': 0.0,
+            'total_return_pct': 0.0,
+            'strategy_count': 0,
+            'profitable_strategies': 0,
+            'losing_strategies': 0
+        }
+
 templates.env.filters["format_number"] = format_number
 templates.env.filters["format_datetime"] = format_datetime
 templates.env.filters["format_date_only"] = format_date_only
@@ -470,21 +512,23 @@ async def dashboard(request: Request, strategy_filter: Optional[str] = None):
         for strategy in strategies:
             state = await storage.load_state(strategy.id)
             
-            # Son 24 saat trade sayısı
+            # Son 24 saat trade sayısı ve toplam trade sayısı
             trades_today = 0
+            total_trades = 0
             try:
-                trades = await storage.load_trades(strategy.id, limit=100)
+                trades = await storage.load_trades(strategy.id, limit=1000)  # Daha fazla trade al
                 today = datetime.now(timezone.utc).date()
                 trades_today = sum(1 for t in trades if t.timestamp.date() == today)
+                total_trades = len(trades)  # Toplam trade sayısı
             except:
                 pass
             
-            # Kar-zarar istatistikleri al
+            # Kar-zarar istatistikleri al - ESKİ SİSTEM (fallback için)
             pnl_stats = None
             try:
                 pnl_stats = await storage.calculate_realized_pnl(strategy.id)
             except Exception as e:
-                logger.warning(f"PnL hesaplama hatası {strategy.id}: {e}")
+                logger.warning(f"Eski PnL hesaplama hatası {strategy.id}: {e}")
                 pnl_stats = {
                     'realized_pnl': 0.0,
                     'total_profit': 0.0,
@@ -494,6 +538,9 @@ async def dashboard(request: Request, strategy_filter: Optional[str] = None):
                     'loss_trades': 0
                 }
             
+            # YENİ PnL SİSTEMİ - Güncel fiyat gerekli olduğu için aşağıda hesaplanacak
+            new_pnl_stats = None
+            
             total_open_orders += len(state.open_orders) if state else 0
             
             # Güncel fiyat al (cache için)
@@ -501,9 +548,32 @@ async def dashboard(request: Request, strategy_filter: Optional[str] = None):
             ott_mode = None
             price_gf_diff = None
             price_gf_diff_pct = None
+            position_info = None
             
             try:
                 current_price = await binance_client.get_current_price(strategy.symbol.value)
+                
+                # YENİ PnL SİSTEMİ - Güncel fiyat ile hesapla
+                if current_price:
+                    try:
+                        new_pnl_stats = await storage.calculate_new_pnl(strategy.id, current_price)
+                        
+                        # Pozisyon bilgisini hesapla
+                        if new_pnl_stats and 'position_quantity' in new_pnl_stats:
+                            position_quantity = new_pnl_stats.get('position_quantity', 0.0)
+                            position_side = new_pnl_stats.get('position_side')
+                            position_value = new_pnl_stats.get('position_value', 0.0)
+                            
+                            if position_quantity != 0 and position_side:
+                                position_info = {
+                                    'quantity': position_quantity,
+                                    'side': position_side,
+                                    'value_usd': position_value,
+                                    'is_long': position_side == 'long',
+                                    'is_short': position_side == 'short'
+                                }
+                    except Exception as e:
+                        logger.warning(f"Yeni PnL hesaplama hatası {strategy.id}: {e}")
                 
                 # OTT hesaplama için OHLCV verisi al
                 if current_price:
@@ -566,21 +636,52 @@ async def dashboard(request: Request, strategy_filter: Optional[str] = None):
                 'price_gf_diff': price_gf_diff,
                 'price_gf_diff_pct': price_gf_diff_pct,
                 'trades_today': trades_today,
-                'pnl_stats': pnl_stats,
+                'total_trades': total_trades,  # Toplam trade sayısı
+                'pnl_stats': pnl_stats,  # Eski sistem (fallback)
+                'new_pnl_stats': new_pnl_stats,  # Yeni sistem
+                'position_info': position_info,  # Pozisyon bilgisi
                 'is_running': task_manager.tasks.get(f'strategy_{strategy.id}') is not None,
                 'dca_info': dca_info,
                 'error_count': error_count
             })
         
-        # Toplam kar-zarar hesapla
-        total_realized_pnl = sum(s['pnl_stats']['realized_pnl'] for s in strategy_summaries if s['pnl_stats'])
+        # Toplam kar-zarar hesapla - YENİ SİSTEM ÖNCELİKLİ
+        total_realized_pnl = 0.0
+        total_unrealized_pnl = 0.0
+        total_balance = 0.0
+        
+        # Pozisyon özeti hesapla
+        total_long_positions = 0.0
+        total_short_positions = 0.0
+        long_count = 0
+        short_count = 0
+        
+        for s in strategy_summaries:
+            if s['new_pnl_stats']:
+                # Yeni sistem varsa onu kullan
+                total_realized_pnl += s['new_pnl_stats'].get('realized_pnl', 0.0)
+                total_unrealized_pnl += s['new_pnl_stats'].get('unrealized_pnl', 0.0)
+                total_balance += s['new_pnl_stats'].get('total_balance', 1000.0)
+                
+                # Pozisyon bilgilerini topla
+                if s['position_info']:
+                    position_value = s['position_info'].get('value_usd', 0.0)
+                    if s['position_info'].get('is_long'):
+                        total_long_positions += position_value
+                        long_count += 1
+                    elif s['position_info'].get('is_short'):
+                        total_short_positions += position_value
+                        short_count += 1
+            elif s['pnl_stats']:
+                # Fallback: Eski sistem
+                total_realized_pnl += s['pnl_stats'].get('realized_pnl', 0.0)
         
         stats = DashboardStats(
             total_strategies=len(strategies),
             active_strategies=active_count,
             total_open_orders=total_open_orders,
             total_trades_today=sum(s['trades_today'] for s in strategy_summaries),
-            total_profit_today=total_realized_pnl  # Gerçekleşen toplam kar-zarar
+            total_profit_today=total_realized_pnl + total_unrealized_pnl  # Toplam kar-zarar (realized + unrealized)
         )
         
         # Son işlemleri getir ve zenginleştir
@@ -637,6 +738,15 @@ async def dashboard(request: Request, strategy_filter: Optional[str] = None):
         # Açık emirleri zamana göre sırala (en yeni üstte)
         open_orders_summary.sort(key=lambda x: x['timestamp'], reverse=True)
         
+        # Pozisyon özeti
+        position_summary = {
+            'total_long_positions': total_long_positions,
+            'total_short_positions': total_short_positions,
+            'long_count': long_count,
+            'short_count': short_count,
+            'total_positions': total_long_positions + total_short_positions
+        }
+        
         return templates.TemplateResponse(
             "index.html",
             {
@@ -645,6 +755,7 @@ async def dashboard(request: Request, strategy_filter: Optional[str] = None):
                 "stats": stats,
                 "recent_trades": recent_trades,
                 "open_orders": open_orders_summary,
+                "position_summary": position_summary,
                 "symbols": [s.value for s in Symbol],
                 "timeframes": [t.value for t in Timeframe],
                 "datetime": datetime,
@@ -719,6 +830,14 @@ async def strategy_detail(request: Request, strategy_id: str):
         # Task durumu
         is_running = task_manager.tasks.get(f'strategy_{strategy_id}') is not None
         
+        # YENİ PnL SİSTEMİ - Detay sayfası için
+        new_pnl_stats = None
+        if current_price:
+            try:
+                new_pnl_stats = await storage.calculate_new_pnl(strategy_id, current_price)
+            except Exception as e:
+                logger.warning(f"Detay sayfası yeni PnL hesaplama hatası {strategy_id}: {e}")
+
         return templates.TemplateResponse(
             "detail.html",
             {
@@ -732,6 +851,7 @@ async def strategy_detail(request: Request, strategy_id: str):
                 "target_price": target_price,
                 "recent_trades": recent_trades,
                 "trade_stats": trade_stats,
+                "new_pnl_stats": new_pnl_stats,  # Yeni PnL sistemi
                 "is_running": is_running
             }
         )
@@ -827,6 +947,11 @@ async def create_strategy(strategy_data: StrategyCreate):
                 parameters['min_drop_pct'] = strategy_data.min_drop_pct
             elif 'min_drop_pct' not in parameters:
                 parameters['min_drop_pct'] = 2.0  # Varsayılan
+                
+            if strategy_data.profit_threshold_pct is not None:
+                parameters['profit_threshold_pct'] = strategy_data.profit_threshold_pct
+            elif 'profit_threshold_pct' not in parameters:
+                parameters['profit_threshold_pct'] = 1.0  # Varsayılan
         
         # BOL-Grid için özel parametreler
         elif strategy_data.strategy_type == StrategyType.BOL_GRID:
@@ -1144,6 +1269,7 @@ async def create_strategy_form(
     base_usdt: Optional[str] = Form(None),
     dca_multiplier: Optional[str] = Form(None),
     min_drop_pct: Optional[str] = Form(None),
+    profit_threshold_pct: Optional[str] = Form(None),
     # BOL-Grid parametreleri
     initial_usdt: Optional[str] = Form(None),
     min_profit_pct: Optional[str] = Form(None),
@@ -1241,26 +1367,43 @@ async def update_strategy_form(
     strategy_id: str = Form(...),
     method_override: str = Form(..., alias="method_override"),
     name: str = Form(...),
-    y: float = Form(...),
-    usdt_grid: float = Form(...),
-    gf: float = Form(0),
-    price_min: Optional[float] = Form(None),
-    price_max: Optional[float] = Form(None),
-    ott_period: int = Form(14),
-    ott_opt: float = Form(2.0)
+    y: Optional[str] = Form(None),
+    usdt_grid: Optional[str] = Form(None),
+    gf: Optional[str] = Form(None),
+    price_min: Optional[str] = Form(None),
+    price_max: Optional[str] = Form(None),
+    ott_period: Optional[str] = Form(None),
+    ott_opt: Optional[str] = Form(None)
 ):
     """Form'dan strateji güncelle"""
     try:
+        # String değerleri güvenli bir şekilde parse et
+        def safe_float(value):
+            if value is None or value == "":
+                return None
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                return None
+        
+        def safe_int(value):
+            if value is None or value == "":
+                return None
+            try:
+                return int(value)
+            except (ValueError, TypeError):
+                return None
+        
         # StrategyUpdate objesi oluştur
         strategy_data = StrategyUpdate(
-            name=name,
-            y=y,
-            usdt_grid=usdt_grid,
-            gf=gf,
-            price_min=price_min if price_min and price_min > 0 else None,
-            price_max=price_max if price_max and price_max > 0 else None,
-            ott_period=ott_period,
-            ott_opt=ott_opt
+            name=name if name and name.strip() else None,
+            y=safe_float(y),
+            usdt_grid=safe_float(usdt_grid),
+            gf=safe_float(gf),
+            price_min=safe_float(price_min),
+            price_max=safe_float(price_max),
+            ott_period=safe_int(ott_period),
+            ott_opt=safe_float(ott_opt)
         )
         
         # API endpoint'ini çağır
@@ -1827,6 +1970,421 @@ async def get_current_log():
     except Exception as e:
         logger.error(f"Log okuma hatası: {e}")
         return {"status": "error", "message": str(e)}
+
+@app.post("/api/strategies/{strategy_id}/migrate-pnl")
+async def migrate_strategy_pnl(strategy_id: str):
+    """Strateji geçmiş trade'lerinden PnL'i yeniden hesapla ve state'e uygula"""
+    try:
+        from core.pnl_calculator import pnl_calculator
+        
+        # Stratejinin mevcut olup olmadığını kontrol et
+        strategy = await storage.get_strategy(strategy_id)
+        if not strategy:
+            raise HTTPException(status_code=404, detail="Strateji bulunamadı")
+        
+        # Trade'leri yükle
+        trades = await storage.load_trades(strategy_id)
+        if not trades:
+            return {"message": "Trade bulunamadı", "migrated": False}
+        
+        # State'i yükle
+        state = await storage.load_state(strategy_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="State bulunamadı")
+        
+        # PnL alanlarını sıfırla ve initialize et
+        pnl_calculator.initialize_state_pnl(state)
+        state.cash_balance = 1000.0  # Reset
+        state.realized_pnl = 0.0
+        state.position_quantity = 0.0
+        state.position_avg_cost = None
+        state.position_side = None
+        
+        # Trade'leri tarihe göre sırala ve tek tek işle
+        trades.sort(key=lambda x: x.timestamp)
+        
+        processed_trades = 0
+        for trade in trades:
+            try:
+                pnl_calculator.process_trade_fill(state, trade)
+                processed_trades += 1
+            except Exception as e:
+                logger.warning(f"Trade işleme hatası {strategy_id}, trade {trade.timestamp}: {e}")
+                continue
+        
+        # State'i kaydet
+        await storage.save_state(state)
+        
+        # Son durumu hesapla
+        current_price = None
+        try:
+            current_price = await binance_client.get_current_price(strategy.symbol.value)
+        except:
+            # Son trade fiyatını kullan
+            current_price = trades[-1].price if trades else 1.0
+        
+        final_pnl = pnl_calculator.get_pnl_summary(state, current_price)
+        
+        logger.info(f"PnL migration tamamlandı {strategy_id}: "
+                   f"{processed_trades} trade, "
+                   f"Final balance: ${final_pnl['total_balance']:.2f}")
+        
+        return {
+            "message": "PnL migration başarılı",
+            "migrated": True,
+            "strategy_id": strategy_id,
+            "strategy_name": strategy.name,
+            "processed_trades": processed_trades,
+            "total_trades": len(trades),
+            "final_pnl": final_pnl
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"PnL migration hatası {strategy_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/strategies/migrate-all-pnl")
+async def migrate_all_strategies_pnl():
+    """Tüm stratejilerin PnL'lerini migrate et"""
+    try:
+        strategies = await storage.load_strategies()
+        results = []
+        
+        for strategy in strategies:
+            # Sadece trade'leri olan stratejileri migrate et
+            trades = await storage.load_trades(strategy.id)
+            if trades:
+                try:
+                    # Tek strateji migration endpoint'ini çağır
+                    result = await migrate_strategy_pnl(strategy.id)
+                    results.append(result)
+                except Exception as e:
+                    logger.error(f"Strateji migration hatası {strategy.id}: {e}")
+                    results.append({
+                        "strategy_id": strategy.id,
+                        "strategy_name": strategy.name,
+                        "migrated": False,
+                        "error": str(e)
+                    })
+        
+        successful_migrations = sum(1 for r in results if r.get('migrated', False))
+        
+        return {
+            "message": f"{successful_migrations}/{len(results)} strateji başarıyla migrate edildi",
+            "total_strategies": len(results),
+            "successful_migrations": successful_migrations,
+            "results": results
+        }
+        
+    except Exception as e:
+        logger.error(f"Toplu PnL migration hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/profit-status")
+async def get_profit_status():
+    """Tüm stratejilerin kar durumunu getir"""
+    try:
+        profit_data = await calculate_profit_status()
+        return profit_data
+    except Exception as e:
+        logger.error(f"Kar durumu API hatası: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============= BACKTEST ANALYSIS ROUTES =============
+
+@app.get("/backtest-analysis", response_class=HTMLResponse)
+async def backtest_analysis_page(request: Request):
+    """Backtest analiz sayfası"""
+    try:
+        return templates.TemplateResponse(
+            "backtest_analysis.html",
+            {"request": request}
+        )
+    except Exception as e:
+        logger.error(f"Backtest analiz sayfası hatası: {e}")
+        raise HTTPException(status_code=500, detail="Backtest analiz sayfası yüklenemedi")
+
+# ESKİ BACKTEST ANALYZER ENDPOİNTLERİ KALDIRILDI
+# Yeni Excel Backtest sistemi kullanılıyor
+
+# ============= EXCEL BACKTEST API =============
+
+@app.post("/api/backtest/upload-excel")
+async def upload_excel_backtest(file: UploadFile = File(...)):
+    """
+    Excel dosyası yükleyip backtest analizi yap
+    """
+    try:
+        logger.info(f"Excel backtest dosyası yükleniyor: {file.filename}")
+        
+        # Dosya türü kontrolü
+        if not file.filename.endswith(('.xlsx', '.xls')):
+            raise HTTPException(
+                status_code=400, 
+                detail="Sadece Excel dosyaları (.xlsx, .xls) desteklenir"
+            )
+        
+        # Dosya boyutu kontrolü (10MB limit)
+        file_content = await file.read()
+        if len(file_content) > 10 * 1024 * 1024:  # 10MB
+            raise HTTPException(
+                status_code=400,
+                detail="Dosya boyutu çok büyük (maksimum 10MB)"
+            )
+        
+        # Excel dosyasını işle
+        ohlcv_data = excel_backtest_engine.process_excel_file(file_content)
+        
+        logger.info(f"Excel işlendi: {len(ohlcv_data)} satır veri")
+        
+        import pandas as pd
+        
+        # Başarılı yanıt - veri önizlemesi ile (JSON serializable)
+        preview_data = []
+        for _, row in ohlcv_data.head(10).iterrows():
+            row_dict = {}
+            for col, value in row.items():
+                if pd.isna(value):
+                    row_dict[col] = None
+                elif hasattr(value, 'isoformat'):  # Timestamp
+                    row_dict[col] = value.isoformat()
+                else:
+                    row_dict[col] = float(value) if isinstance(value, (int, float)) else str(value)
+            preview_data.append(row_dict)
+        
+        return JSONResponse({
+            "status": "success",
+            "message": "Excel dosyası başarıyla işlendi",
+            "data": {
+                "total_rows": len(ohlcv_data),
+                "date_range": {
+                    "start": ohlcv_data['DateTime'].min().isoformat(),
+                    "end": ohlcv_data['DateTime'].max().isoformat()
+                },
+                "columns": list(ohlcv_data.columns),
+                "preview": preview_data
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Excel backtest yükleme hatası: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Excel dosyası işlenirken hata oluştu: {str(e)}"
+        )
+
+
+@app.post("/api/backtest/run-strategy")
+async def run_strategy_backtest(request: Request):
+    """
+    Seçilen strateji ile backtest çalıştır
+    """
+    try:
+        # Request body'yi al
+        body = await request.json()
+        
+        # Gerekli parametreleri al
+        excel_file_content = body.get('excel_file_content')  # Base64 encoded file content
+        strategy_type = body.get('strategy_type')
+        strategy_params = body.get('strategy_params', {})
+        # Sembol ve timeframe Excel verisinden otomatik belirleniyor
+        symbol = 'ETHUSDT'  # Excel verisi için varsayılan
+        timeframe = '1h'
+        
+        if not excel_file_content or not strategy_type:
+            raise HTTPException(
+                status_code=400,
+                detail="Eksik parametreler: excel_file_content ve strategy_type gerekli"
+            )
+        
+        logger.info(f"=== BACKTEST BAŞLIYOR ===")
+        logger.info(f"Backtest çalıştırılıyor: {strategy_type} - Excel verisi")
+        logger.info(f"Strategy params: {strategy_params}")
+        
+        # Base64 encoded Excel dosyasını decode et
+        import base64
+        file_content = base64.b64decode(excel_file_content)
+        logger.info(f"Excel file size: {len(file_content)} bytes")
+        logger.info(f"=== EXCEL DECODE TAMAMLANDI ===")
+        
+        # Excel dosyasını işle
+        ohlcv_data = excel_backtest_engine.process_excel_file(file_content)
+        
+        # Backtest çalıştır
+        result = excel_backtest_engine.run_backtest(
+            ohlcv_data=ohlcv_data,
+            strategy_type=strategy_type,
+            strategy_params=strategy_params,
+            symbol=symbol,
+            timeframe=timeframe
+        )
+        
+        # Sonuçları JSON'a çevir
+        result_dict = {
+            # Temel bilgiler
+            'symbol': result.symbol,
+            'strategy_name': result.strategy_name,
+            'strategy_type': result.strategy_type,
+            'timeframe': result.timeframe,
+            'start_date': result.start_date.isoformat(),
+            'end_date': result.end_date.isoformat(),
+            'duration_days': result.duration_days,
+            
+            # Finansal sonuçlar
+            'initial_balance': result.initial_balance,
+            'final_balance': result.final_balance,
+            'final_position_value': result.final_position_value,
+            'total_return': result.total_return,
+            'total_return_pct': result.total_return_pct,
+            'realized_pnl': result.realized_pnl,
+            'unrealized_pnl': result.unrealized_pnl,
+            
+            # İşlem istatistikleri
+            'total_trades': result.total_trades,
+            'buy_trades': result.buy_trades,
+            'sell_trades': result.sell_trades,
+            'profitable_trades': result.profitable_trades,
+            'losing_trades': result.losing_trades,
+            'win_rate': result.win_rate,
+            'avg_trade_return': result.avg_trade_return,
+            'max_drawdown': result.max_drawdown,
+            'max_profit': result.max_profit,
+            
+            # Detaylar
+            'trades': [
+                {
+                    'timestamp': trade.timestamp.isoformat(),
+                    'side': trade.side,
+                    'side_color': 'green' if str(trade.side).upper() == 'BUY' else 'red',
+                    'price': trade.price,
+                    'quantity': trade.quantity,
+                    'total_value': trade.total_value,
+                    'balance_before': trade.balance_before,
+                    'balance_after': trade.balance_after,
+                    'position_quantity_before': trade.position_quantity_before,
+                    'position_quantity_after': trade.position_quantity_after,
+                    'position_avg_cost': trade.position_avg_cost,
+                    'realized_pnl': trade.realized_pnl,
+                    'unrealized_pnl': trade.unrealized_pnl,
+                    'total_pnl': trade.total_pnl,
+                    'signal_reason': trade.signal_reason,
+                    'cash_flow': trade.cash_flow,
+                    # OTT değerleri
+                    'ott_mode': trade.ott_mode,
+                    'ott_upper': trade.ott_upper,
+                    'ott_lower': trade.ott_lower,
+                    'ott_baseline': trade.ott_baseline
+                }
+                for trade in result.trades
+            ],
+            'balance_history': [
+                {
+                    'timestamp': entry['timestamp'].isoformat(),
+                    'price': entry['price'],
+                    'cash_balance': entry['cash_balance'],
+                    'position_quantity': entry['position_quantity'],
+                    'position_value': entry['position_value'],
+                    'position_value_usd': entry['position_quantity'] * entry['price'],
+                    'position_avg_cost': entry.get('position_avg_cost', 0.0),
+                    'unrealized_pnl': entry['unrealized_pnl'],
+                    'total_balance': entry['total_balance']
+                }
+                for entry in result.balance_history
+            ],
+            'parameters': result.parameters
+        }
+        
+        logger.info(f"Backtest tamamlandı: {result.total_trades} işlem, final return: {result.total_return_pct:.2f}%")
+        
+        return JSONResponse({
+            "status": "success",
+            "message": "Backtest başarıyla tamamlandı",
+            "data": result_dict
+        })
+        
+    except Exception as e:
+        logger.error(f"Backtest çalıştırma hatası: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Backtest çalıştırılırken hata oluştu: {str(e)}"
+        )
+
+
+@app.get("/api/backtest/strategies")
+async def get_available_strategies():
+    """
+    Mevcut stratejileri ve parametrelerini döndür
+    """
+    try:
+        # Mevcut stratejileri al
+        strategies_data = await storage.load_strategies()
+        
+        # Strateji tipleri ve parametreler
+        strategy_definitions = {
+            'bol_grid': {
+                'name': 'Bollinger Grid',
+                'description': 'Bollinger Bands tabanlı Grid stratejisi',
+                'parameters': {
+                    'initial_usdt': {'type': 'float', 'default': 50.0, 'min': 10.0, 'max': 1000.0, 'description': 'Başlangıç USDT miktarı'},
+                    'min_drop_pct': {'type': 'float', 'default': 1.0, 'min': 0.1, 'max': 10.0, 'description': 'Minimum düşüş yüzdesi (%)'},
+                    'min_profit_pct': {'type': 'float', 'default': 1.0, 'min': 0.1, 'max': 10.0, 'description': 'Minimum kar yüzdesi (%)'},
+                    'bollinger_period': {'type': 'int', 'default': 50, 'min': 10, 'max': 200, 'description': 'Bollinger Bands periyodu'},
+                    'bollinger_std': {'type': 'float', 'default': 1.0, 'min': 0.5, 'max': 3.0, 'description': 'Bollinger Bands standart sapma'}
+                }
+            },
+            'dca_ott': {
+                'name': 'DCA + OTT',
+                'description': 'Dollar Cost Averaging + OTT stratejisi',
+                'parameters': {
+                    'base_usdt': {'type': 'float', 'default': 50.0, 'min': 10.0, 'max': 1000.0, 'description': 'Temel alım miktarı (USDT)'},
+                    'dca_multiplier': {'type': 'float', 'default': 1.5, 'min': 1.1, 'max': 3.0, 'description': 'DCA çarpanı'},
+                    'min_drop_pct': {'type': 'float', 'default': 2.0, 'min': 0.5, 'max': 10.0, 'description': 'Minimum düşüş yüzdesi (%)'},
+                    'profit_threshold_pct': {'type': 'float', 'default': 1.0, 'min': 0.1, 'max': 10.0, 'description': 'Kar alım eşiği yüzdesi (%)'}
+                }
+            },
+            'grid_ott': {
+                'name': 'Grid + OTT',
+                'description': 'Grid Trading + OTT stratejisi',
+                'parameters': {
+                    'y': {'type': 'float', 'default': 0.001, 'min': 0.0001, 'max': 100.0, 'description': 'Grid aralığı'},
+                    'usdt_grid': {'type': 'float', 'default': 30.0, 'min': 10.0, 'max': 1000.0, 'description': 'Grid başına USDT miktarı'}
+                }
+            }
+        }
+        
+        # Mevcut stratejilerden örnekler
+        active_strategies = []
+        for strategy in strategies_data:
+            if strategy.active:
+                active_strategies.append({
+                    'id': strategy.id,
+                    'name': strategy.name,
+                    'symbol': strategy.symbol,
+                    'strategy_type': strategy.strategy_type.value,
+                    'parameters': strategy.parameters,
+                    'ott_params': {
+                        'period': strategy.ott.period if strategy.ott else 14,
+                        'opt': strategy.ott.opt if strategy.ott else 2.0
+                    }
+                })
+        
+        return JSONResponse({
+            "status": "success",
+            "data": {
+                "strategy_definitions": strategy_definitions,
+                "active_strategies": active_strategies
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Strateji listesi hatası: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Strateji listesi alınırken hata oluştu: {str(e)}"
+        )
+
 
 # ============= MAIN =============
 

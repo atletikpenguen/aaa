@@ -1,0 +1,41 @@
+{
+  "strategy_id": "f688e233",
+  "symbol": "ETHUSDT",
+  "strategy_type": "dca_ott",
+  "active": true,
+  "created_at": null,
+  "updated_at": null,
+  "initial_balance": 1000.0,
+  "cash_balance": 1000.0,
+  "realized_pnl": 0.0,
+  "position_quantity": 2.0,
+  "position_avg_cost": 30.628,
+  "position_side": "long",
+  "gf": null,
+  "dca_positions": [
+    {
+      "buy_price": 30.628,
+      "quantity": 1.0,
+      "timestamp": "2025-10-01T14:22:34.244000+00:00",
+      "order_id": "33289701944"
+    }
+  ],
+  "avg_cost": 30.628,
+  "total_quantity": 1.0,
+  "cycle_number": 1,
+  "cycle_trade_count": 1,
+  "open_orders": [],
+  "last_bar_timestamp": "2025-10-02T08:45:00+00:00",
+  "last_ott_mode": "SAT",
+  "total_buy_orders": 0,
+  "total_sell_orders": 0,
+  "last_update": "2025-10-02T08:52:03.961362+00:00",
+  "custom_data": {
+    "first_buy_executed": false,
+    "last_ott_action": null,
+    "profit_threshold": 0.0,
+    "use_market_orders": true,
+    "last_sell_price": null,
+    "last_trade_price": 30.628
+  }
+}

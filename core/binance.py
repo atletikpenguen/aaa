@@ -31,7 +31,7 @@ class BinanceClient:
         
         # Rate limiting
         self.last_request_time = 0
-        self.min_request_interval = 0.1  # 100ms minimum
+        self.min_request_interval = 0.5  # 100ms minimum
         
         # Order logging
         self.order_logger = OrderLogManager()
@@ -229,6 +229,21 @@ class BinanceClient:
             return float(ticker['last'])
         except Exception as e:
             logger.error(f"Fiyat alma hatası {symbol}: {e}")
+            return None
+    
+    async def get_symbol_ticker(self, symbol: str) -> Optional[Dict]:
+        """Symbol ticker bilgisi al (app.py uyumluluğu için)"""
+        try:
+            await self._rate_limit()
+            ccxt_symbol = self._convert_symbol_to_ccxt(symbol)
+            ticker = self.client.fetch_ticker(ccxt_symbol)
+            return {
+                'price': ticker.get('last', 0.0),
+                'symbol': symbol,
+                'timestamp': ticker.get('timestamp', 0)
+            }
+        except Exception as e:
+            logger.error(f"Ticker alma hatası {symbol}: {e}")
             return None
     
     async def create_market_order(self, symbol: str, side: OrderSide, quantity: float, 

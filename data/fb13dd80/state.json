@@ -1,0 +1,30 @@
+{
+  "strategy_id": "fb13dd80",
+  "symbol": "ETHUSDT",
+  "strategy_type": "grid_ott",
+  "active": true,
+  "created_at": null,
+  "updated_at": null,
+  "initial_balance": 1000.0,
+  "cash_balance": 1000.0,
+  "realized_pnl": 0.0,
+  "position_quantity": -2665.0,
+  "position_avg_cost": 0.24005805628517823,
+  "position_side": "short",
+  "gf": 0.2459,
+  "dca_positions": [],
+  "avg_cost": null,
+  "total_quantity": 0.0,
+  "cycle_number": 1,
+  "cycle_trade_count": 0,
+  "open_orders": [],
+  "last_bar_timestamp": "2025-10-02T08:45:00+00:00",
+  "last_ott_mode": "AL",
+  "total_buy_orders": 0,
+  "total_sell_orders": 0,
+  "last_update": "2025-10-02T08:51:33.849273+00:00",
+  "custom_data": {
+    "gf_initialized": true,
+    "last_grid_z": 0
+  }
+}

@@ -1,3 +1,90 @@
+
+PS C:\Users\1000y> ssh root@37.148.209.104
+
+
+Komple İş Akışı: Lokalden VPS'e Manuel Yükleme
+Bu süreci üç ana aşamaya ayıracağız:
+Lokal Bilgisayarda: Yeni versiyonu paketleme.
+Lokal Bilgisayardan: Paketi VPS'e gönderme.
+VPS Üzerinde: Yeni versiyonu devreye alma.
+Aşama 1: Lokal Bilgisayarınızda Projeyi Hazırlama
+
+Lokal bilgisayarınızdaki proje klasöründe bir komut istemi (CMD/PowerShell) açın ve şu komutu çalıştırın:
+
+
+pip freeze > requirements.txt
+
+
+Proje Klasörünüzü Zip'leyin
+Projenizin bulunduğu klasöre gidin (örneğin C:\Users\Kullanici\Desktop\aaa).
+
+
+aaa klasörüne sağ tıklayın -> "Gönder" -> "Sıkıştırılmış (ziplenmiş) klasör".
+
+
+
+Aşama 2: scp ile Zip Dosyasını VPS'e Yükleme
+ÖNEMLİ: Bu komutu, VPS'e bağlı olduğunuz SSH ekranında değil, kendi Windows bilgisayarınızdaki yeni bir Komut İstemi (CMD) veya PowerShell penceresinde çalıştıracaksınız.
+Bilgisayarınızda yeni bir Komut İstemi (CMD) veya PowerShell penceresi açın.
+Aşağıdaki scp komutunu, zip dosyanızın yolu ve sunucu bilgilerinizle güncelleyerek çalıştırın:
+
+
+
+scp "C:\Users\SizinKullaniciAdiniz\Desktop\aaa.zip" root@37.148.209.104:~/
+
+
+
+
+Aşama 3: VPS Üzerinde Yeni Versiyonu Devreye Alma
+Yükleme bittikten sonra, şimdi SSH ile sunucunuza bağlanın ve aşağıdaki adımları izleyin.
+Çalışan Uygulamayı Durdurun
+Eğer uygulamanız o an çalışıyorsa, Ctrl+C tuşlarına basarak durdurun.
+Mevcut Klasörü Yedekleyin (Silmek Yerine)
+Doğrudan silmek risklidir. Önce eski versiyonun adını değiştirelim.
+
+# Ana dizinde olduğunuzdan emin olun
+cd ~
+# Eski klasörün adını değiştirin
+mv aaa aaa_eski_versiyon
+
+
+Yeni Zip Dosyasını Açın
+ls komutuyla aaa.zip dosyasının orada olduğunu görebilirsiniz. Şimdi onu açalım.
+
+unzip aaa.zip
+Bu komut, aaa adında yeni proje klasörünüzü oluşturacaktır.
+Yeni Proje Ortamını Kurun
+Yeni proje klasörüne girin:
+
+cd aaa
+
+Sanal ortamı aktif edin:
+
+source venv/bin/activate
+Kütüphaneleri requirements.txt dosyasından kurun/güncelleyin:
+
+pip install -r requirements.txt
+
+Yeni Versiyonu Çalıştırın
+
+python3 app.py
+Test Edin
+Tarayıcınızdan http://37.148.209.104:3000 adresine giderek her şeyin yolunda çalıştığını kontrol edin.
+(İsteğe Bağlı) Temizlik
+Her şeyin yolunda olduğundan emin olduktan sonra, sunucudaki eski versiyonu ve zip dosyasını silerek yer açabilirsiniz.
+
+# Ana dizine geri dön
+cd ~
+# Eski yedek klasörü sil
+rm -rf aaa_eski_versiyon
+# Zip dosyasını sil
+rm aaa.zip
+Bu yöntemle, harici servislere ihtiyaç duymadan sadece komut satırını kullanarak uygulamanızı güvenli ve etkili bir şekilde güncelleyebilirsiniz.
+
+
+
+
+
 # 🚀 VPS Deployment Rehberi - Trader Bot
 
 Bu rehber, Trader YLMZ 3.0 projesini Ubuntu VPS sunucusunda çalıştırmak için gerekli tüm adımları içerir.
@@ -8,6 +95,10 @@ cmdye
 ssh root@37.148.209.104
 root
 Onqwe@25**
+
+
+
+
 
 
 

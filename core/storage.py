@@ -20,6 +20,7 @@ except ImportError:
 
 from .models import Strategy, State, Trade, OpenOrder, OrderSide, PartialFillRecord
 from .utils import logger
+from .pnl_calculator import pnl_calculator
 
 
 class StorageManager:
@@ -43,22 +44,28 @@ class StorageManager:
         except Exception as e:
             print(f"Storage dizini oluşturma hatası: {e}")
     
-    async def _safe_write_file(self, file_path: str, content: str, max_retries: int = 3):
+    async def _safe_write_file(self, file_path: str, content: str, max_retries: int = 5):
         """Windows permission sorunları için güvenli dosya yazma"""
         for attempt in range(max_retries):
             try:
-                temp_file = f"{file_path}.tmp"
+                temp_file = f"{file_path}.tmp_{attempt}"
                 
                 # Geçici dosyaya yaz
                 async with aiofiles.open(temp_file, 'w', encoding='utf-8') as f:
                     await f.write(content)
                 
-                # Windows için kısa bekleme
-                await asyncio.sleep(0.01)
+                # Windows için daha uzun bekleme
+                await asyncio.sleep(0.05)
                 
                 # Hedef dosya varsa önce sil (Windows için gerekli)
                 if await aiofiles.os.path.exists(file_path):
-                    await aiofiles.os.remove(file_path)
+                    try:
+                        await aiofiles.os.remove(file_path)
+                        await asyncio.sleep(0.02)  # Silme sonrası kısa bekleme
+                    except PermissionError:
+                        # Dosya hala kullanımda, daha uzun bekle
+                        await asyncio.sleep(0.2)
+                        await aiofiles.os.remove(file_path)
                 
                 # Dosyayı taşı
                 await aiofiles.os.rename(temp_file, file_path)
@@ -67,7 +74,7 @@ class StorageManager:
             except PermissionError as e:
                 logger.warning(f"Dosya yazma izin hatası (deneme {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(0.1 * (attempt + 1))  # Exponential backoff
+                    await asyncio.sleep(0.5 * (attempt + 1))  # Daha uzun exponential backoff
                 else:
                     raise
             except Exception as e:
@@ -237,11 +244,18 @@ class StorageManager:
                     
                     data['open_orders'] = open_orders
                 
-                # Datetime string'lerini parse et
+                # Datetime string'lerini parse et ve naive ise UTC olarak ayarla
                 if isinstance(data.get('last_bar_timestamp'), str):
-                    data['last_bar_timestamp'] = datetime.fromisoformat(data['last_bar_timestamp'])
+                    dt = datetime.fromisoformat(data['last_bar_timestamp'])
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    data['last_bar_timestamp'] = dt
+                
                 if isinstance(data.get('last_update'), str):
-                    data['last_update'] = datetime.fromisoformat(data['last_update'])
+                    dt = datetime.fromisoformat(data['last_update'])
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    data['last_update'] = dt
                 
                 state = State(**data)
                 return state
@@ -306,6 +320,35 @@ class StorageManager:
         except Exception as e:
             logger.error(f"State kaydetme hatası {state.strategy_id}: {e}")
     
+    # ============= PENDING ORDERS (YENİ) =============
+    
+    def _get_pending_orders_file(self, strategy_id: str) -> Path:
+        """Bekleyen emirler dosyasının yolunu döndürür."""
+        return self.base_path / strategy_id / "pending_orders.json"
+
+    async def load_pending_orders(self, strategy_id: str) -> Dict[str, Any]:
+        """Bekleyen emirleri dosyadan yükler."""
+        pending_orders_file = self._get_pending_orders_file(strategy_id)
+        if not await aiofiles.os.path.exists(pending_orders_file):
+            return {}
+        try:
+            async with aiofiles.open(pending_orders_file, 'r', encoding='utf-8') as f:
+                content = await f.read()
+                return json.loads(content)
+        except Exception as e:
+            logger.error(f"[{strategy_id}] Bekleyen emirler yüklenemedi: {e}")
+            return {}
+
+    async def save_pending_orders(self, strategy_id: str, pending_orders: Dict[str, Any]):
+        """Bekleyen emirleri dosyaya kaydeder."""
+        await self._ensure_strategy_directory(strategy_id)
+        pending_orders_file = self._get_pending_orders_file(strategy_id)
+        try:
+            json_content = json.dumps(pending_orders, indent=2, ensure_ascii=False)
+            await self._safe_write_file(str(pending_orders_file), json_content)
+        except Exception as e:
+            logger.error(f"[{strategy_id}] Bekleyen emirler kaydedilemedi: {e}")
+
     # ============= TRADES =============
     
     def _get_trades_file(self, strategy_id: str) -> Path:
@@ -324,22 +367,73 @@ class StorageManager:
                 await f.write(header)
     
     async def save_trade(self, trade: Trade):
-        """Tek trade kaydı ekle"""
+        """Tek trade kaydı ekle ve PnL güncelle"""
         await self._ensure_trades_csv_header(trade.strategy_id)
         trades_file = self._get_trades_file(trade.strategy_id)
         
         try:
-            # CSV satırı oluştur
-            csv_line = f"{trade.timestamp.isoformat()},{trade.strategy_id},{trade.side.value},{trade.price},{trade.quantity},{trade.z},{trade.notional},{trade.gf_before},{trade.gf_after},{trade.commission or ''},{trade.order_id or ''},{trade.limit_price or ''},{trade.cycle_info or ''}\n"
+            # Strateji tipini al
+            strategy = await self.get_strategy(trade.strategy_id)
+            strategy_type = strategy.strategy_type if strategy else "grid_ott"
+            
+            # Strateji tipine göre doğru alanları kullan
+            if strategy_type == "grid_ott":
+                # Grid+OTT için z değeri kullan, cycle_info boş bırak
+                csv_line = f"{trade.timestamp.isoformat()},{trade.strategy_id},{trade.side.value},{trade.price},{trade.quantity},{trade.z},{trade.notional},{trade.gf_before},{trade.gf_after},{trade.commission or ''},{trade.order_id or ''},{trade.limit_price or ''},\n"
+            elif strategy_type == "dca_ott":
+                # DCA+OTT için cycle_info kullan, z değeri 0
+                csv_line = f"{trade.timestamp.isoformat()},{trade.strategy_id},{trade.side.value},{trade.price},{trade.quantity},0,{trade.notional},{trade.gf_before},{trade.gf_after},{trade.commission or ''},{trade.order_id or ''},{trade.limit_price or ''},{trade.cycle_info or ''}\n"
+            else:
+                # Diğer stratejiler için varsayılan
+                csv_line = f"{trade.timestamp.isoformat()},{trade.strategy_id},{trade.side.value},{trade.price},{trade.quantity},{trade.z},{trade.notional},{trade.gf_before},{trade.gf_after},{trade.commission or ''},{trade.order_id or ''},{trade.limit_price or ''},{trade.cycle_info or ''}\n"
             
             # Dosyaya append et
             async with aiofiles.open(trades_file, 'a', encoding='utf-8') as f:
                 await f.write(csv_line)
             
-            logger.info(f"Trade kaydedildi: {trade.strategy_id} - {trade.side.value} {trade.quantity} @ {trade.price}")
+            # YENİ PnL SİSTEMİ: Trade gerçekleştiğinde state'i güncelle
+            await self._update_pnl_on_trade(trade)
+            
+            logger.info(f"Trade kaydedildi ve PnL güncellendi: {trade.strategy_id} - {trade.side.value} {trade.quantity} @ {trade.price}")
             
         except Exception as e:
             logger.error(f"Trade kaydetme hatası {trade.strategy_id}: {e}")
+    
+    async def _update_pnl_on_trade(self, trade: Trade):
+        """Trade gerçekleştiğinde PnL hesaplamalarını güncelle"""
+        try:
+            # State'i yükle
+            state = await self.load_state(trade.strategy_id)
+            if not state:
+                logger.warning(f"PnL güncellemesi için state bulunamadı: {trade.strategy_id}")
+                return
+            
+            # PnL alanlarını initialize et (migration için)
+            pnl_calculator.initialize_state_pnl(state)
+            
+            # Trade'i işle ve PnL'i güncelle
+            pnl_changes = pnl_calculator.process_trade_fill(state, trade)
+            
+            # State'i kaydet
+            await self.save_state(state)
+            
+            # PnL GEÇMİŞİ KAYDET: Trade sonrası PnL durumunu kaydet
+            try:
+                pnl_record = await self.create_pnl_history_record(
+                    strategy_id=trade.strategy_id,
+                    current_price=trade.price,  # Trade fiyatını güncel fiyat olarak kullan
+                    trade=trade
+                )
+                await self.save_pnl_history(pnl_record)
+            except Exception as pnl_hist_error:
+                logger.error(f"PnL geçmiş kaydetme hatası {trade.strategy_id}: {pnl_hist_error}")
+            
+            logger.info(f"PnL güncellendi - {trade.strategy_id}: "
+                       f"Realized: ${pnl_changes['realized_pnl_change']:.2f}, "
+                       f"Cash: ${pnl_changes['cash_balance_change']:.2f}")
+            
+        except Exception as e:
+            logger.error(f"PnL güncelleme hatası {trade.strategy_id}: {e}")
     
     async def load_trades(self, strategy_id: str, limit: Optional[int] = None) -> List[Trade]:
         """Strateji trade'lerini yükle"""
@@ -587,6 +681,109 @@ class StorageManager:
             'open_sell_value': 0.0  # Satım stack'i yok, hep eşleştiriliyor
         }
     
+    async def calculate_new_pnl(self, strategy_id: str, current_price: float) -> Dict:
+        """
+        YENİ PnL HESAPLAMA SİSTEMİ
+        
+        1000 USD başlangıç sermayesi ile:
+        - Nakit bakiye (cash_balance)
+        - Gerçekleşen kar/zarar (realized_pnl) 
+        - Gerçekleşmeyen kar/zarar (unrealized_pnl)
+        - Toplam bakiye (total_balance)
+        """
+        state = await self.load_state(strategy_id)
+        if not state:
+            return {
+                'error': 'State bulunamadı',
+                'initial_balance': 1000.0,
+                'cash_balance': 1000.0,
+                'realized_pnl': 0.0,
+                'unrealized_pnl': 0.0,
+                'total_balance': 1000.0,
+                'position_quantity': 0.0,
+                'position_avg_cost': None,
+                'position_side': None
+            }
+        
+        # State'in PnL alanlarını initialize et (migration için)
+        pnl_calculator.initialize_state_pnl(state)
+        
+        # Güncel PnL özetini al
+        pnl_summary = pnl_calculator.get_pnl_summary(state, current_price)
+        
+        return pnl_summary
+    
+    # ============= PnL GEÇMİŞİ SİSTEMİ =============
+    
+    def _get_pnl_history_file(self, strategy_id: str) -> Path:
+        """PnL geçmiş dosyası yolunu al"""
+        return self.base_path / strategy_id / "pnl_history.csv"
+    
+    async def _ensure_pnl_history_header(self, strategy_id: str):
+        """PnL geçmiş dosyası header'ını oluştur"""
+        await self._ensure_strategy_directory(strategy_id)
+        pnl_file = self._get_pnl_history_file(strategy_id)
+        
+        if not await aiofiles.os.path.exists(pnl_file):
+            header = "timestamp,strategy_id,current_price,total_balance,cash_balance,position_value,realized_pnl,unrealized_pnl,total_pnl,total_return_pct,position_quantity,position_avg_cost,position_side,trigger_trade_id,trigger_side,trigger_price,trigger_quantity\n"
+            async with aiofiles.open(pnl_file, 'w', encoding='utf-8') as f:
+                await f.write(header)
+    
+    async def save_pnl_history(self, pnl_record: 'PnLHistory'):
+        """PnL geçmiş kaydı ekle"""
+        await self._ensure_pnl_history_header(pnl_record.strategy_id)
+        pnl_file = self._get_pnl_history_file(pnl_record.strategy_id)
+        
+        try:
+            # CSV satırı oluştur
+            csv_line = f"{pnl_record.timestamp.isoformat()},{pnl_record.strategy_id},{pnl_record.current_price},{pnl_record.total_balance},{pnl_record.cash_balance},{pnl_record.position_value},{pnl_record.realized_pnl},{pnl_record.unrealized_pnl},{pnl_record.total_pnl},{pnl_record.total_return_pct},{pnl_record.position_quantity},{pnl_record.position_avg_cost or ''},{pnl_record.position_side or ''},{pnl_record.trigger_trade_id or ''},{pnl_record.trigger_side.value if pnl_record.trigger_side else ''},{pnl_record.trigger_price or ''},{pnl_record.trigger_quantity or ''}\n"
+            
+            # Dosyaya append et
+            async with aiofiles.open(pnl_file, 'a', encoding='utf-8') as f:
+                await f.write(csv_line)
+            
+            logger.info(f"PnL geçmişi kaydedildi: {pnl_record.strategy_id} - Balance: ${pnl_record.total_balance:.2f}, PnL: ${pnl_record.total_pnl:.2f}")
+            
+        except Exception as e:
+            logger.error(f"PnL geçmiş kaydetme hatası {pnl_record.strategy_id}: {e}")
+    
+    async def create_pnl_history_record(self, strategy_id: str, current_price: float, trade: Optional['Trade'] = None) -> 'PnLHistory':
+        """Trade sonrası PnL geçmiş kaydı oluştur"""
+        from .pnl_calculator import pnl_calculator
+        from .models import PnLHistory
+        
+        # State'i yükle
+        state = await self.load_state(strategy_id)
+        if not state:
+            raise ValueError(f"State bulunamadı: {strategy_id}")
+        
+        # PnL özetini al
+        pnl_summary = pnl_calculator.get_pnl_summary(state, current_price)
+        
+        # PnL geçmiş kaydını oluştur
+        pnl_record = PnLHistory(
+            timestamp=datetime.now(),
+            strategy_id=strategy_id,
+            current_price=current_price,
+            total_balance=pnl_summary['total_balance'],
+            cash_balance=pnl_summary['cash_balance'],
+            position_value=pnl_summary['position_value'],
+            realized_pnl=pnl_summary['realized_pnl'],
+            unrealized_pnl=pnl_summary['unrealized_pnl'],
+            total_pnl=pnl_summary['total_pnl'],
+            total_return_pct=pnl_summary['total_return_pct'],
+            position_quantity=pnl_summary['position_quantity'],
+            position_avg_cost=pnl_summary['position_avg_cost'],
+            position_side=pnl_summary['position_side'],
+            # Trade bilgileri (eğer varsa)
+            trigger_trade_id=trade.order_id if trade else None,
+            trigger_side=trade.side if trade else None,
+            trigger_price=trade.price if trade else None,
+            trigger_quantity=trade.quantity if trade else None
+        )
+        
+        return pnl_record
+    
     # ============= BACKUP & MAINTENANCE =============
     
     async def backup_strategy_data(self, strategy_id: str, backup_path: str):
@@ -783,7 +980,8 @@ class StorageManager:
                 'long_count': 0,
                 'short_count': 0,
                 'total_volume': 0.0,
-                'total_count': 0
+                'total_count': 0,
+                'realized_pnl': 0.0  # Günlük kapanmış kar
             })
             
             for trade in all_trades:
@@ -810,6 +1008,11 @@ class StorageManager:
                 
                 daily_stats[date_key]['total_volume'] += volume
                 daily_stats[date_key]['total_count'] += 1
+                
+                # Kar/zarar hesaplama kaldırıldı - pnl_history dosyalarından alınacak
+            
+            # PnL history dosyalarından gerçek kar/zarar bilgilerini al
+            await self._add_realized_pnl_from_history(daily_stats, target_dates)
             
             # Sonuçları tarih sırasına göre düzenle (en yeni en üstte)
             result = []
@@ -832,6 +1035,50 @@ class StorageManager:
         except Exception as e:
             logger.error(f"Günlük hacim istatistikleri hesaplama hatası: {e}")
             return []
+    
+    async def _add_realized_pnl_from_history(self, daily_stats: dict, target_dates: list):
+        """Kar durumu takibi ile aynı yöntemi kullanarak gerçek kar/zarar bilgilerini al"""
+        try:
+            # Tüm stratejileri al
+            strategies = await self.load_strategies()
+            
+            for strategy in strategies:
+                try:
+                    # Kar durumu takibi ile aynı yöntemi kullan
+                    # Güncel fiyat bilgisini al
+                    current_price = 0.0
+                    try:
+                        from .binance import binance_client
+                        ticker = await binance_client.get_symbol_ticker(strategy.symbol.value)
+                        if ticker:
+                            current_price = float(ticker['price'])
+                        else:
+                            current_price = 0.0
+                    except Exception as price_error:
+                        logger.warning(f"Fiyat alma hatası {strategy.symbol}: {price_error}")
+                        current_price = 0.0
+                    
+                    # Strateji için PnL hesapla (kar durumu takibi ile aynı yöntem)
+                    pnl_data = await self.calculate_new_pnl(strategy.id, current_price)
+                    
+                    if 'error' not in pnl_data:
+                        strategy_realized = pnl_data.get('realized_pnl', 0.0)
+                        
+                        # Toplam realized_pnl'i sadece bugün için göster
+                        # (Son 3 günün toplam kar/zarar bilgisi)
+                        today = datetime.now(timezone.utc).date()
+                        today_key = today.isoformat()
+                        if today_key in daily_stats:
+                            daily_stats[today_key]['realized_pnl'] += strategy_realized
+                                
+                except Exception as e:
+                    logger.warning(f"Strateji kar hesaplama hatası {strategy.id}: {e}")
+                    continue
+            
+            logger.debug("Kar durumu takibi ile aynı yöntemle kar/zarar bilgileri alındı")
+            
+        except Exception as e:
+            logger.error(f"Kar/zarar hesaplama hatası: {e}")
     
     async def enrich_trades_with_grid_data(self, trades: List[Trade]) -> List[Dict]:
         """

@@ -1,0 +1,859 @@
+{% extends "base.html" %}
+
+{% block title %}Excel Backtest Analizi - Grid + OTT Trading Bot{% endblock %}
+
+{% block content %}
+<div x-data="excelBacktestAnalysis()" class="max-w-7xl mx-auto">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-8">
+        <div>
+            <h1 class="text-3xl font-bold text-gray-900">Excel Backtest Analizi</h1>
+            <p class="text-gray-600 mt-1">Excel verilerinizi yükleyip mevcut stratejilerimizle backtest analizi yapın</p>
+        </div>
+        
+        <div class="flex space-x-3">
+            <a href="/" class="btn btn-secondary">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Dashboard'a Dön
+            </a>
+        </div>
+    </div>
+
+    <!-- Adım 1: Excel Dosyası Yükleme -->
+    <div x-show="currentStep === 1" class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Adım 1: Excel Dosyası Yükleme</h2>
+        <p class="text-sm text-gray-600 mb-4">
+            Excel dosyanız şu formatta olmalıdır: <strong>Date, Time, Open, High, Low, Close, Volume, WClose</strong>
+        </p>
+        
+        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors">
+            <div class="mb-4">
+                <svg class="mx-auto h-16 w-16 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+            </div>
+            
+            <h3 class="text-lg font-medium text-gray-900 mb-2">Excel Dosyası Seçin</h3>
+            <p class="text-sm text-gray-600 mb-4">OHLCV verilerinizi içeren Excel dosyasını yükleyin (maksimum 10MB)</p>
+            
+            <div>
+                <input type="file" 
+                       @change="handleFileSelect"
+                       accept=".xlsx,.xls"
+                       class="hidden" 
+                       id="excel-file-input">
+                <label for="excel-file-input" 
+                       class="btn btn-primary cursor-pointer">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                    </svg>
+                    Dosya Seç
+                </label>
+            </div>
+            
+            <!-- Seçilen dosya bilgisi -->
+            <div x-show="selectedFile" class="mt-6 p-4 bg-blue-50 rounded-lg">
+                <p class="text-sm text-blue-800">
+                    <strong>Seçilen dosya:</strong> <span x-text="selectedFile?.name"></span>
+                </p>
+                <p class="text-xs text-blue-600 mt-1">
+                    Boyut: <span x-text="formatFileSize(selectedFile?.size)"></span>
+                </p>
+                
+                <button @click="uploadExcelFile" 
+                        class="btn btn-success mt-3">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                    </svg>
+                    Dosyayı Yükle ve İşle
+                </button>
+            </div>
+        </div>
+
+        <!-- Veri önizlemesi -->
+        <div x-show="fileData" class="mt-6 p-4 bg-green-50 rounded-lg">
+            <h4 class="font-medium text-green-800 mb-2">✅ Dosya başarıyla yüklendi!</h4>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div>
+                    <span class="text-green-700 font-medium">Toplam Satır:</span>
+                    <span x-text="fileData?.total_rows"></span>
+                </div>
+                <div>
+                    <span class="text-green-700 font-medium">Başlangıç:</span>
+                    <span x-text="formatDate(fileData?.date_range?.start)"></span>
+                </div>
+                <div>
+                    <span class="text-green-700 font-medium">Bitiş:</span>
+                    <span x-text="formatDate(fileData?.date_range?.end)"></span>
+                </div>
+            </div>
+            
+            <button @click="currentStep = 2" class="btn btn-primary mt-4">
+                Strateji Seçimine Geç →
+            </button>
+        </div>
+    </div>
+
+    <!-- Adım 2: Strateji ve Parametreler -->
+    <div x-show="currentStep === 2" class="bg-white rounded-lg shadow-sm p-6 mb-6">
+        <h2 class="text-xl font-semibold text-gray-900 mb-4">Adım 2: Strateji ve Parametreler</h2>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Strateji Seçimi -->
+            <div>
+                <h3 class="text-lg font-medium text-gray-900 mb-3">Strateji Seçin</h3>
+                
+                <div class="space-y-3">
+                    <template x-for="(strategy, type) in strategyDefinitions" :key="type">
+                        <label class="flex items-start p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+                               :class="selectedStrategyType === type ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
+                            <input type="radio" 
+                                   :value="type" 
+                                   x-model="selectedStrategyType"
+                                   @change="updateStrategyParameters"
+                                   class="mt-1 mr-3">
+                            <div>
+                                <div class="font-medium text-gray-900" x-text="strategy.name"></div>
+                                <div class="text-sm text-gray-600" x-text="strategy.description"></div>
+                            </div>
+                        </label>
+                    </template>
+                </div>
+            </div>
+
+            <!-- Strateji Parametreleri -->
+            <div x-show="selectedStrategyType">
+                <h3 class="text-lg font-medium text-gray-900 mb-3">Strateji Parametreleri</h3>
+                
+                <div class="space-y-4">
+                    <template x-for="(param, key) in currentStrategyParams" :key="key">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1" x-text="param.description"></label>
+                            <input :type="param.type === 'int' ? 'number' : 'number'"
+                                   :step="param.type === 'int' ? '1' : '0.1'"
+                                   :min="param.min"
+                                   :max="param.max"
+                                   x-model="strategyParams[key]"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                            <div class="text-xs text-gray-500 mt-1">
+                                Varsayılan: <span x-text="param.default"></span> 
+                                (Min: <span x-text="param.min"></span>, Max: <span x-text="param.max"></span>)
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <!-- OTT Parametreleri -->
+                <div class="mt-6 pt-4 border-t border-gray-200">
+                    <h4 class="text-md font-medium text-gray-900 mb-3">OTT Parametreleri</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">OTT Periyodu</label>
+                            <input type="number" min="5" max="50" x-model="ottParams.period"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">OTT Optimizasyon</label>
+                            <input type="number" step="0.1" min="0.5" max="5.0" x-model="ottParams.opt"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Test Bilgileri -->
+                <div class="mt-6 pt-4 border-t border-gray-200">
+                    <h4 class="text-md font-medium text-gray-900 mb-3">Test Ayarları</h4>
+                    <div class="bg-blue-50 p-3 rounded-md">
+                        <p class="text-sm text-blue-800">
+                            <strong>ℹ️ Not:</strong> Backtest Excel verinizdeki OHLCV fiyatlarına göre çalışır. 
+                            Sembol adı otomatik olarak belirlenir.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex space-x-3">
+                    <button @click="currentStep = 1" class="btn btn-secondary">
+                        ← Geri
+                    </button>
+                    <button @click="runBacktest" class="btn btn-primary">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        Backtest Çalıştır
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Adım 3: Sonuçlar -->
+    <div x-show="currentStep === 3 && backtestResults" class="space-y-6">
+        <!-- Özet Kartlar -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center">
+                    <div class="p-2 bg-blue-100 rounded-lg">
+                        <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-2xl font-bold" 
+                           :class="backtestResults.total_return_pct >= 0 ? 'text-green-600' : 'text-red-600'"
+                           x-text="formatPercentage(backtestResults.total_return_pct)"></p>
+                        <p class="text-sm text-gray-600">Toplam Getiri</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center">
+                    <div class="p-2 bg-green-100 rounded-lg">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-2xl font-bold text-gray-900" x-text="backtestResults.total_trades"></p>
+                        <p class="text-sm text-gray-600">Toplam İşlem</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center">
+                    <div class="p-2 bg-purple-100 rounded-lg">
+                        <svg class="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-2xl font-bold text-purple-600" x-text="formatPercentage(backtestResults.win_rate)"></p>
+                        <p class="text-sm text-gray-600">Kazanma Oranı</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <div class="flex items-center">
+                    <div class="p-2 bg-orange-100 rounded-lg">
+                        <svg class="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"></path>
+                        </svg>
+                    </div>
+                    <div class="ml-4">
+                        <p class="text-2xl font-bold text-orange-600" x-text="formatPercentage(backtestResults.max_drawdown)"></p>
+                        <p class="text-sm text-gray-600">Max Drawdown</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Grafik Bölümü -->
+        <div class="bg-white rounded-lg shadow-sm p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">Performans Grafiği</h3>
+            <div class="h-96">
+                <canvas id="backtestChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Detaylı İstatistikler -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Finansal Özet -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Finansal Özet</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Başlangıç Bakiyesi:</span>
+                        <span class="font-medium" x-text="'$' + formatNumber(backtestResults.initial_balance)"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Final Bakiyesi:</span>
+                        <span class="font-medium" x-text="'$' + formatNumber(backtestResults.final_balance)"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Pozisyon Değeri:</span>
+                        <span class="font-medium" x-text="'$' + formatNumber(backtestResults.final_position_value)"></span>
+                    </div>
+                    <div class="flex justify-between border-t pt-3">
+                        <span class="text-gray-600">Gerçekleşen Kar/Zarar:</span>
+                        <span class="font-medium" 
+                              :class="backtestResults.realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'"
+                              x-text="'$' + formatNumber(backtestResults.realized_pnl)"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Gerçekleşmeyen Kar/Zarar:</span>
+                        <span class="font-medium" 
+                              :class="backtestResults.unrealized_pnl >= 0 ? 'text-green-600' : 'text-red-600'"
+                              x-text="'$' + formatNumber(backtestResults.unrealized_pnl)"></span>
+                    </div>
+                    <div class="flex justify-between border-t pt-3 text-lg font-semibold">
+                        <span>Toplam Getiri:</span>
+                        <span :class="backtestResults.total_return >= 0 ? 'text-green-600' : 'text-red-600'"
+                              x-text="'$' + formatNumber(backtestResults.total_return)"></span>
+                    </div>
+                </div>
+                
+                <!-- Seçilen Parametreler -->
+                <div class="mt-6 pt-4 border-t border-gray-200">
+                    <h4 class="text-md font-medium text-gray-900 mb-3">Kullanılan Parametreler</h4>
+                    <div class="bg-gray-50 p-3 rounded-md">
+                        <div class="grid grid-cols-1 gap-2 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">Strateji:</span>
+                                <span class="font-medium" x-text="getStrategyName(selectedStrategyType)"></span>
+                            </div>
+                            <template x-for="(value, key) in strategyParams" :key="key">
+                                <div class="flex justify-between">
+                                    <span class="text-gray-600" x-text="getParameterName(key) + ':'"></span>
+                                    <span class="font-medium" x-text="value"></span>
+                                </div>
+                            </template>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">OTT Periyodu:</span>
+                                <span class="font-medium" x-text="ottParams.period"></span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-600">OTT Optimizasyon:</span>
+                                <span class="font-medium" x-text="ottParams.opt"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- İşlem İstatistikleri -->
+            <div class="bg-white rounded-lg shadow-sm p-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">İşlem İstatistikleri</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Alış İşlemleri:</span>
+                        <span class="font-medium text-green-600" x-text="backtestResults.buy_trades"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Satış İşlemleri:</span>
+                        <span class="font-medium text-red-600" x-text="backtestResults.sell_trades"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Karlı İşlemler:</span>
+                        <span class="font-medium text-green-600" x-text="backtestResults.profitable_trades"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Zararlı İşlemler:</span>
+                        <span class="font-medium text-red-600" x-text="backtestResults.losing_trades"></span>
+                    </div>
+                    <div class="flex justify-between border-t pt-3">
+                        <span class="text-gray-600">Ortalama İşlem Getirisi:</span>
+                        <span class="font-medium" 
+                              :class="backtestResults.avg_trade_return >= 0 ? 'text-green-600' : 'text-red-600'"
+                              x-text="'$' + formatNumber(backtestResults.avg_trade_return)"></span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-600">Test Süresi:</span>
+                        <span class="font-medium" x-text="Math.round(backtestResults.duration_days) + ' gün'"></span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- İşlem Tablosu -->
+        <div class="bg-white rounded-lg shadow-sm p-6">
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">İşlem Detayları</h3>
+            
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 text-xs">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Tarih</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">İşlem</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Fiyat</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Miktar</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Toplam</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Kasa</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Bakiye</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Pozisyon</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">Ort. Maliyet</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">K/Z</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">OTT Mode</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">OTT Upper</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20">OTT Lower</th>
+                            <th class="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Sinyal</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        <template x-for="(trade, index) in backtestResults.trades" :key="index">
+                            <tr>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="formatDateTime(trade.timestamp)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap">
+                                    <span class="px-1 py-1 text-xs font-medium rounded-full"
+                                          :class="trade.side === 'buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
+                                          x-text="trade.side.toUpperCase()"></span>
+                                </td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="'$' + formatNumber(trade.price)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="formatNumber(trade.quantity)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="'$' + formatNumber(trade.total_value)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs" 
+                                    :class="getCumulativeCashFlow(index) >= 0 ? 'text-green-600' : 'text-red-600'"
+                                    x-text="'$' + formatNumber(getCumulativeCashFlow(index))"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="'$' + formatNumber(trade.balance_after)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="formatNumber(trade.position_quantity_after)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="'$' + formatNumber(trade.position_avg_cost || 0)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs"
+                                    :class="trade.realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'"
+                                    x-text="'$' + formatNumber(trade.realized_pnl)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="getOttMode(trade)"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="formatOttValue(getOttUpper(trade))"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-900" x-text="formatOttValue(getOttLower(trade))"></td>
+                                <td class="px-2 py-2 whitespace-nowrap text-xs text-gray-500" x-text="trade.signal_reason"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Yeni Test Butonu -->
+        <div class="bg-white rounded-lg shadow-sm p-6 text-center">
+            <button @click="resetBacktest" class="btn btn-primary">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                Yeni Test Başlat
+            </button>
+        </div>
+    </div>
+
+    <!-- Yükleme Durumu -->
+    <div x-show="loading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+            <div class="flex items-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-4"></div>
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900">İşlem Yapılıyor</h3>
+                    <p class="text-sm text-gray-600" x-text="loadingMessage"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+function excelBacktestAnalysis() {
+    return {
+        // Ana durum
+        currentStep: 1,
+        loading: false,
+        loadingMessage: '',
+        
+        // Dosya yükleme
+        selectedFile: null,
+        fileData: null,
+        
+        // Strateji seçimi
+        strategyDefinitions: {},
+        selectedStrategyType: '',
+        currentStrategyParams: {},
+        strategyParams: {},
+        ottParams: {
+            period: 14,
+            opt: 2.0
+        },
+        // Sembol artık Excel verisinden otomatik belirleniyor
+        
+        // Sonuçlar
+        backtestResults: null,
+        chart: null,
+        
+        async init() {
+            console.log('Excel backtest analysis initialized');
+            await this.loadStrategyDefinitions();
+        },
+        
+        async loadStrategyDefinitions() {
+            try {
+                const response = await fetch('/api/backtest/strategies');
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    this.strategyDefinitions = result.data.strategy_definitions;
+                    console.log('Strategy definitions loaded:', this.strategyDefinitions);
+                }
+            } catch (error) {
+                console.error('Strategy definitions yüklenirken hata:', error);
+            }
+        },
+        
+        handleFileSelect(event) {
+            this.selectedFile = event.target.files[0];
+            console.log('File selected:', this.selectedFile);
+        },
+        
+        async uploadExcelFile() {
+            if (!this.selectedFile) {
+                alert('Lütfen bir dosya seçin');
+                return;
+            }
+            
+            this.loading = true;
+            this.loadingMessage = 'Excel dosyası işleniyor...';
+            
+            try {
+                const formData = new FormData();
+                formData.append('file', this.selectedFile);
+                
+                const response = await fetch('/api/backtest/upload-excel', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    this.fileData = result.data;
+                    this.showToast('Başarılı', 'Excel dosyası başarıyla yüklendi');
+                } else {
+                    throw new Error(result.message || 'Bilinmeyen hata');
+                }
+            } catch (error) {
+                console.error('Excel upload error:', error);
+                this.showToast('Hata', 'Excel dosyası yüklenirken hata oluştu: ' + error.message);
+            } finally {
+                this.loading = false;
+            }
+        },
+        
+        updateStrategyParameters() {
+            if (this.selectedStrategyType && this.strategyDefinitions[this.selectedStrategyType]) {
+                this.currentStrategyParams = this.strategyDefinitions[this.selectedStrategyType].parameters;
+                
+                // Parametreleri varsayılan değerlerle initialize et
+                this.strategyParams = {};
+                for (const [key, param] of Object.entries(this.currentStrategyParams)) {
+                    this.strategyParams[key] = param.default;
+                }
+                
+                console.log('Strategy parameters updated:', this.strategyParams);
+            }
+        },
+        
+        async runBacktest() {
+            if (!this.selectedFile || !this.selectedStrategyType) {
+                alert('Lütfen dosya yükleyin ve strateji seçin');
+                return;
+            }
+            
+            this.loading = true;
+            this.loadingMessage = 'Backtest çalıştırılıyor...';
+            
+            try {
+                // Excel dosyasını base64'e çevir
+                const fileContent = await this.fileToBase64(this.selectedFile);
+                
+                // Backtest parametrelerini hazırla
+                const backtestData = {
+                    excel_file_content: fileContent,
+                    strategy_type: this.selectedStrategyType,
+                    strategy_params: {
+                        ...this.strategyParams,
+                        ott: this.ottParams
+                    }
+                    // symbol ve timeframe artık Excel verisinden otomatik belirleniyor
+                };
+                
+                console.log('Running backtest with strategy:', this.selectedStrategyType);
+                
+                const response = await fetch('/api/backtest/run-strategy', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(backtestData)
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    this.backtestResults = result.data;
+                    this.currentStep = 3;
+                    
+                    // Grafik çiz (bir sonraki tick'te)
+                    setTimeout(() => this.createChart(), 100);
+                    
+                    this.showToast('Başarılı', 'Backtest başarıyla tamamlandı');
+                } else {
+                    throw new Error(result.message || 'Bilinmeyen hata');
+                }
+            } catch (error) {
+                console.error('Backtest error:', error);
+                this.showToast('Hata', 'Backtest çalıştırılırken hata oluştu: ' + error.message);
+            } finally {
+                this.loading = false;
+            }
+        },
+        
+        fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => {
+                    // Remove data:*/*;base64, prefix
+                    const base64 = reader.result.split(',')[1];
+                    resolve(base64);
+                };
+                reader.onerror = error => reject(error);
+            });
+        },
+        
+        createChart() {
+            if (!this.backtestResults || !this.backtestResults.balance_history) {
+                return;
+            }
+            
+            const ctx = document.getElementById('backtestChart');
+            if (!ctx) {
+                console.error('Chart canvas not found');
+                return;
+            }
+            
+            // Önceki chart'ı temizle
+            if (this.chart) {
+                this.chart.destroy();
+            }
+            
+            const balanceHistory = this.backtestResults.balance_history;
+            
+            this.chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: balanceHistory.map(entry => new Date(entry.timestamp).toLocaleDateString('tr-TR')),
+                    datasets: [
+                        {
+                            label: 'Fiyat',
+                            data: balanceHistory.map(entry => entry.price),
+                            borderColor: 'rgb(99, 102, 241)',
+                            backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                            yAxisID: 'y',
+                            tension: 0.1
+                        },
+                        {
+                            label: 'Toplam Bakiye',
+                            data: balanceHistory.map(entry => entry.total_balance),
+                            borderColor: 'rgb(34, 197, 94)',
+                            backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                            yAxisID: 'y1',
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    scales: {
+                        x: {
+                            display: true,
+                            title: {
+                                display: true,
+                                text: 'Tarih'
+                            }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: {
+                                display: true,
+                                text: 'Fiyat ($)'
+                            }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: {
+                                display: true,
+                                text: 'Bakiye ($)'
+                            },
+                            grid: {
+                                drawOnChartArea: false,
+                            },
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        },
+                        title: {
+                            display: true,
+                            text: 'Fiyat ve Bakiye Performansı'
+                        }
+                    }
+                }
+            });
+        },
+        
+        resetBacktest() {
+            this.currentStep = 1;
+            this.selectedFile = null;
+            this.fileData = null;
+            this.backtestResults = null;
+            this.selectedStrategyType = '';
+            this.strategyParams = {};
+            
+            if (this.chart) {
+                this.chart.destroy();
+                this.chart = null;
+            }
+            
+            // File input'u temizle
+            const fileInput = document.getElementById('excel-file-input');
+            if (fileInput) {
+                fileInput.value = '';
+            }
+        },
+        
+        // Utility functions
+        formatNumber(value) {
+            if (value === null || value === undefined) return '0.00';
+            return parseFloat(value).toFixed(2);
+        },
+        
+        formatPercentage(value) {
+            if (value === null || value === undefined) return '0.00%';
+            return parseFloat(value).toFixed(2) + '%';
+        },
+        
+        formatDate(dateString) {
+            if (!dateString) return '';
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('tr-TR');
+            } catch (error) {
+                return dateString;
+            }
+        },
+        
+        formatDateTime(dateString) {
+            if (!dateString) return '';
+            try {
+                const date = new Date(dateString);
+                return date.toLocaleDateString('tr-TR') + ' ' + date.toLocaleTimeString('tr-TR', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            } catch (error) {
+                return dateString;
+            }
+        },
+        
+        formatFileSize(bytes) {
+            if (!bytes) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        },
+        
+        showToast(title, message) {
+            window.dispatchEvent(new CustomEvent('show-toast', {
+                detail: {
+                    id: Date.now() + Math.random(),
+                    title: title,
+                    message: message
+                }
+            }));
+        },
+        
+        getCumulativeCashFlow(index) {
+            if (!this.backtestResults || !this.backtestResults.trades) {
+                return 0;
+            }
+            
+            let cumulative = 0;
+            for (let i = 0; i <= index; i++) {
+                if (this.backtestResults.trades[i] && this.backtestResults.trades[i].cash_flow !== undefined) {
+                    // cash_flow zaten doğru işaretle geliyor (alış: negatif, satış: pozitif)
+                    cumulative += this.backtestResults.trades[i].cash_flow;
+                }
+            }
+            return cumulative;
+        },
+        
+        getStrategyName(strategyType) {
+            const names = {
+                'dca_ott': 'DCA + OTT',
+                'bol_grid': 'Bollinger Grid',
+                'grid_ott': 'Grid + OTT'
+            };
+            return names[strategyType] || strategyType;
+        },
+        
+        getParameterName(key) {
+            const names = {
+                'base_usdt': 'Base USDT',
+                'min_drop_pct': 'Min Düşüş %',
+                'profit_threshold_pct': 'Kar Eşiği %',
+                'dca_multiplier': 'DCA Çarpanı',
+                'initial_usdt': 'İlk USDT',
+                'grid_spacing': 'Grid Aralığı',
+                'max_grid_levels': 'Max Grid Seviyesi',
+                'usdt_grid': 'Grid USDT',
+                'grid_spacing_pct': 'Grid Aralık %'
+            };
+            return names[key] || key;
+        },
+        
+        getOttMode(trade) {
+            // Trade objesinde OTT bilgisi varsa kullan
+            if (trade.ott_mode) {
+                return trade.ott_mode;
+            }
+            // Yoksa sinyal reason'dan çıkar
+            if (trade.signal_reason && trade.signal_reason.includes('OTT')) {
+                if (trade.signal_reason.includes('AL')) return 'AL';
+                if (trade.signal_reason.includes('SAT')) return 'SAT';
+            }
+            return '-';
+        },
+        
+        getOttUpper(trade) {
+            if (trade.ott_upper && trade.ott_upper !== null && trade.ott_upper !== 0) {
+                return trade.ott_upper;
+            }
+            return null;
+        },
+        
+        getOttLower(trade) {
+            if (trade.ott_lower && trade.ott_lower !== null && trade.ott_lower !== 0) {
+                return trade.ott_lower;
+            }
+            return null;
+        },
+        
+        formatOttValue(value) {
+            if (value === null || value === undefined || value === 0) {
+                return '-';
+            }
+            return '$' + this.formatNumber(value);
+        }
+    };
+}
+</script>
+{% endblock %}

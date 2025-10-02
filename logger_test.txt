@@ -1,0 +1,4 @@
+Logger test at 2025-10-02 11:51:15.332468
+Logger object: <Logger trading_bot (WARNING)>
+Logger level: 30
+Logger handlers: [<FileHandler C:\pythonProjeler\0_corsur\_trader\vps_aktif\aaa\logs\20251002-app.log (WARNING)>, <StreamHandler <stderr> (WARNING)>]

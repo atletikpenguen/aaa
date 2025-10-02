@@ -86,6 +86,15 @@
                 Log Temizle
             </button>
             
+            <a href="/backtest-analysis"
+               class="btn btn-secondary">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                          d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+                Backtest Analiz
+            </a>
+            
             <button @click="$dispatch('open-modal', {modal: 'create-strategy'})"
                     class="btn btn-primary">
                 <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -177,6 +186,105 @@
             </div>
         </div>
         
+        <!-- Kar Durumu Takibi -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-6" 
+             x-data="profitTracker()" 
+             x-init="init()">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-lg font-semibold text-gray-900">
+                    <span class="mr-2">📊</span>Kar Durumu Takibi
+                </h2>
+                <button @click="refreshProfit()" 
+                        class="btn btn-sm btn-secondary"
+                        :class="{ 'loading': loading }">
+                    <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Yenile
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-6 gap-4 mb-4">
+                <!-- Toplam Kar -->
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <div class="text-sm font-medium text-gray-600 mb-1">Toplam Kar</div>
+                    <div class="text-2xl font-bold" 
+                         :class="totalProfit >= 0 ? 'text-green-600' : 'text-red-600'"
+                         x-text="'$' + totalProfit.toFixed(2)">
+                        $0.00
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        <span x-text="totalReturnPct.toFixed(2) + '%'"
+                              :class="totalReturnPct >= 0 ? 'text-green-600' : 'text-red-600'">
+                            0.00%
+                        </span> getiri
+                    </div>
+                </div>
+                
+                <!-- Kapanmış Kar -->
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <div class="text-sm font-medium text-gray-600 mb-1">Kapanmış Kar</div>
+                    <div class="text-2xl font-bold" 
+                         :class="realizedProfit >= 0 ? 'text-green-600' : 'text-red-600'"
+                         x-text="'$' + realizedProfit.toFixed(2)">
+                        $0.00
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        Gerçekleşen kar
+                    </div>
+                </div>
+                
+                <!-- Açık Pozisyon Kar -->
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <div class="text-sm font-medium text-gray-600 mb-1">Açık Pozisyon Kar</div>
+                    <div class="text-2xl font-bold" 
+                         :class="unrealizedProfit >= 0 ? 'text-green-600' : 'text-red-600'"
+                         x-text="'$' + unrealizedProfit.toFixed(2)">
+                        $0.00
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        Henüz gerçekleşmeyen
+                    </div>
+                </div>
+                
+                <!-- Strateji Durumu -->
+                <div class="bg-gray-50 rounded-lg p-4">
+                    <div class="text-sm font-medium text-gray-600 mb-1">Strateji Durumu</div>
+                    <div class="text-sm mb-2">
+                        <span class="text-green-600 font-medium" x-text="profitableStrategies">0</span> kar
+                        <span class="text-gray-400 mx-1">|</span>
+                        <span class="text-red-600 font-medium" x-text="losingStrategies">0</span> zarar
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        <span x-text="strategyCount">0</span> toplam strateji
+                    </div>
+                </div>
+                
+                <!-- Long Pozisyonlar -->
+                <div class="bg-green-50 rounded-lg p-4">
+                    <div class="text-sm font-medium text-gray-600 mb-1">📈 Long Pozisyonlar</div>
+                    <div class="text-2xl font-bold text-green-600">
+                        ${{ "%.2f"|format(position_summary.total_long_positions) }}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        {{ position_summary.long_count }} pozisyon
+                    </div>
+                </div>
+                
+                <!-- Short Pozisyonlar -->
+                <div class="bg-red-50 rounded-lg p-4">
+                    <div class="text-sm font-medium text-gray-600 mb-1">📉 Short Pozisyonlar</div>
+                    <div class="text-2xl font-bold text-red-600">
+                        -${{ "%.2f"|format(position_summary.total_short_positions) }}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                        {{ position_summary.short_count }} pozisyon
+                    </div>
+                </div>
+            </div>
+        </div>
+        
         <!-- Pozisyon Detayları -->
         <div class="overflow-x-auto" x-show="positions.length > 0">
             <table class="min-w-full">
@@ -248,6 +356,7 @@
                         <th class="text-right py-3 px-4 text-sm font-medium text-gray-600">Short Hacmi</th>
                         <th class="text-right py-3 px-4 text-sm font-medium text-gray-600">Net Hacim</th>
                         <th class="text-right py-3 px-4 text-sm font-medium text-gray-600">Toplam Hacim</th>
+                        <th class="text-right py-3 px-4 text-sm font-medium text-gray-600">Kapanmış Kar</th>
                         <th class="text-center py-3 px-4 text-sm font-medium text-gray-600">İşlem Sayısı</th>
                     </tr>
                 </thead>
@@ -268,6 +377,9 @@
                                 x-text="(day.net_volume >= 0 ? '+$' : '-$') + Math.abs(day.net_volume).toFixed(2)"></td>
                             <td class="py-3 px-4 text-right text-sm font-semibold text-gray-900" 
                                 x-text="'$' + day.total_volume.toFixed(2)"></td>
+                            <td class="py-3 px-4 text-right text-sm font-medium"
+                                :class="day.realized_pnl >= 0 ? 'text-green-600' : 'text-red-600'"
+                                x-text="(day.realized_pnl >= 0 ? '+$' : '-$') + Math.abs(day.realized_pnl).toFixed(2)"></td>
                             <td class="py-3 px-4 text-center text-sm">
                                 <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
                                       x-text="day.total_count"></span>
@@ -416,9 +528,22 @@
         <div class="flex justify-between items-center mb-6">
             <h2 class="text-xl font-semibold text-gray-900">Stratejiler</h2>
             
-            {% if strategies|length == 0 %}
-            <span class="text-sm text-gray-500">Henüz strateji yok</span>
-            {% endif %}
+            <div class="flex space-x-3">
+                {% if strategies|length > 0 %}
+                <button hx-get="/api/strategies/migrate-all-pnl"
+                        hx-target="body"
+                        hx-confirm="Tüm stratejilerin geçmiş trade'lerinden PnL hesaplaması yapılacak. Bu işlem uzun sürebilir. Devam edilsin mi?"
+                        class="btn btn-secondary btn-sm">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Tüm PnL Hesapla
+                </button>
+                {% else %}
+                <span class="text-sm text-gray-500">Henüz strateji yok</span>
+                {% endif %}
+            </div>
         </div>
 
         {% if strategies|length > 0 %}
@@ -522,6 +647,19 @@
                                 <div class="text-sm text-gray-500">
                                     OTT: {{ item.strategy.ott.period }}/{{ item.strategy.ott.opt }}%
                                 </div>
+                                {% if item.position_info %}
+                                    <div class="text-xs mt-1">
+                                        {% if item.position_info.is_long %}
+                                            <span class="position-badge position-long">
+                                                📈 LONG: ${{ "%.2f"|format(item.position_info.value_usd) }}
+                                            </span>
+                                        {% elif item.position_info.is_short %}
+                                            <span class="position-badge position-short">
+                                                📉 SHORT: -${{ "%.2f"|format(item.position_info.value_usd) }}
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
                             </td>
                             
                             <td class="px-6 py-4 whitespace-nowrap">
@@ -598,12 +736,25 @@
                                     Bugün: {{ item.trades_today }}
                                 </div>
                                 <div class="text-sm text-gray-500">
-                                    Toplam: {{ item.strategy.total_trades }}
+                                    Toplam: {{ item.total_trades }}
                                 </div>
                             </td>
                             
                             <td class="px-6 py-4 whitespace-nowrap">
-                                {% if item.pnl_stats %}
+                                {% if item.new_pnl_stats %}
+                                    <!-- YENİ PnL SİSTEMİ -->
+                                    <div class="text-sm font-medium">
+                                        <span class="text-gray-700">Bakiye: ${{ item.new_pnl_stats.cash_balance | format_number(2) }}</span>
+                                    </div>
+                                    <div class="text-xs {% if item.new_pnl_stats.unrealized_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                                        Açık P&L: {% if item.new_pnl_stats.unrealized_pnl >= 0 %}+{% endif %}${{ item.new_pnl_stats.unrealized_pnl | format_number(2) }}
+                                    </div>
+                                    <div class="text-xs {% if item.new_pnl_stats.total_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                                        Toplam: {% if item.new_pnl_stats.total_pnl >= 0 %}+{% endif %}${{ item.new_pnl_stats.total_pnl | format_number(2) }}
+                                        ({% if item.new_pnl_stats.total_return_pct >= 0 %}+{% endif %}{{ item.new_pnl_stats.total_return_pct | format_number(2) }}%)
+                                    </div>
+                                {% elif item.pnl_stats %}
+                                    <!-- ESKİ SİSTEM (FALLBACK) -->
                                     <div class="text-sm font-medium {% if item.pnl_stats.realized_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
                                         {% if item.pnl_stats.realized_pnl >= 0 %}+{% endif %}${{ item.pnl_stats.realized_pnl | format_number(2) }}
                                     </div>
@@ -776,6 +927,19 @@
                                 <div class="text-sm text-gray-500">
                                     OTT: {{ item.strategy.ott.period }}/{{ item.strategy.ott.opt }}%
                                 </div>
+                                {% if item.position_info %}
+                                    <div class="text-xs mt-1">
+                                        {% if item.position_info.is_long %}
+                                            <span class="position-badge position-long">
+                                                📈 LONG: ${{ "%.2f"|format(item.position_info.value_usd) }}
+                                            </span>
+                                        {% elif item.position_info.is_short %}
+                                            <span class="position-badge position-short">
+                                                📉 SHORT: -${{ "%.2f"|format(item.position_info.value_usd) }}
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
                             </td>
                             
                             <td class="px-6 py-4 whitespace-nowrap">
@@ -799,7 +963,9 @@
                                     {% endif %}
                                 </div>
                                 <div class="text-sm text-gray-500 strategy-gf">
-                                    {% if item.state and item.state.avg_cost and item.state.avg_cost > 0 %}
+                                    {% if item.dca_info and item.dca_info.avg_cost and item.dca_info.avg_cost > 0 %}
+                                        Ort: ${{ item.dca_info.avg_cost | format_number(6) }}
+                                    {% elif item.state and item.state.avg_cost and item.state.avg_cost > 0 %}
                                         Ort: ${{ item.state.avg_cost | format_number(6) }}
                                     {% else %}
                                         <span class="text-gray-400">Pozisyon yok</span>
@@ -830,18 +996,33 @@
                             </td>
                             
                             <td class="px-6 py-4 whitespace-nowrap">
-                                {% if item.state and item.state.total_quantity and item.state.total_quantity > 0 %}
+                                {% if item.dca_info and item.dca_info.position_count and item.dca_info.position_count > 0 %}
+                                    <!-- DCA pozisyon bilgileri -->
+                                    <div class="text-sm text-gray-900">
+                                        {{ item.state.total_quantity | format_number(6) if item.state and item.state.total_quantity else '0' }}
+                                    </div>
+                                    <div class="text-xs text-gray-500">
+                                        ${{ item.dca_info.total_position_value | format_number(2) if item.dca_info.total_position_value else '0' }}
+                                    </div>
+                                    <div class="text-xs text-blue-600">
+                                        {{ item.dca_info.position_count }} pozisyon
+                                    </div>
+                                    {% if item.dca_info.cycle_number is not none %}
+                                        <div class="text-xs text-purple-600">
+                                            Döngü: D{{ item.dca_info.cycle_number }}
+                                            {% if item.dca_info.cycle_trade_count > 0 %}
+                                                -{{ item.dca_info.cycle_trade_count }}
+                                            {% endif %}
+                                        </div>
+                                    {% endif %}
+                                {% elif item.state and item.state.total_quantity and item.state.total_quantity > 0 %}
+                                    <!-- Fallback: State'den pozisyon bilgisi -->
                                     <div class="text-sm text-gray-900">
                                         {{ item.state.total_quantity | format_number(6) }}
                                     </div>
                                     <div class="text-xs text-gray-500">
-                                        ${{ (item.state.total_quantity * item.state.avg_cost) | format_number(2) }}
+                                        ${{ (item.state.total_quantity * item.state.avg_cost) | format_number(2) if item.state.avg_cost else '0' }}
                                     </div>
-                                    {% if item.dca_info and item.dca_info.position_count %}
-                                        <div class="text-xs text-blue-600">
-                                            {{ item.dca_info.position_count }} pozisyon
-                                        </div>
-                                    {% endif %}
                                     {% if item.dca_info and item.dca_info.cycle_number is not none %}
                                         <div class="text-xs text-purple-600">
                                             Döngü: D{{ item.dca_info.cycle_number }}
@@ -860,12 +1041,25 @@
                                     Bugün: {{ item.trades_today }}
                                 </div>
                                 <div class="text-sm text-gray-500">
-                                    Toplam: {{ item.strategy.total_trades }}
+                                    Toplam: {{ item.total_trades }}
                                 </div>
                             </td>
                             
                             <td class="px-6 py-4 whitespace-nowrap">
-                                {% if item.pnl_stats %}
+                                {% if item.new_pnl_stats %}
+                                    <!-- YENİ PnL SİSTEMİ -->
+                                    <div class="text-sm font-medium">
+                                        <span class="text-gray-700">Bakiye: ${{ item.new_pnl_stats.cash_balance | format_number(2) }}</span>
+                                    </div>
+                                    <div class="text-xs {% if item.new_pnl_stats.unrealized_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                                        Açık P&L: {% if item.new_pnl_stats.unrealized_pnl >= 0 %}+{% endif %}${{ item.new_pnl_stats.unrealized_pnl | format_number(2) }}
+                                    </div>
+                                    <div class="text-xs {% if item.new_pnl_stats.total_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
+                                        Toplam: {% if item.new_pnl_stats.total_pnl >= 0 %}+{% endif %}${{ item.new_pnl_stats.total_pnl | format_number(2) }}
+                                        ({% if item.new_pnl_stats.total_return_pct >= 0 %}+{% endif %}{{ item.new_pnl_stats.total_return_pct | format_number(2) }}%)
+                                    </div>
+                                {% elif item.pnl_stats %}
+                                    <!-- ESKİ SİSTEM (FALLBACK) -->
                                     <div class="text-sm font-medium {% if item.pnl_stats.realized_pnl >= 0 %}text-green-600{% else %}text-red-600{% endif %}">
                                         {% if item.pnl_stats.realized_pnl >= 0 %}+{% endif %}${{ item.pnl_stats.realized_pnl | format_number(2) }}
                                     </div>
@@ -1025,6 +1219,19 @@
                                 <div class="text-sm font-medium text-gray-900">
                                     {{ item.strategy.symbol.value }}
                                 </div>
+                                {% if item.position_info %}
+                                    <div class="text-xs mt-1">
+                                        {% if item.position_info.is_long %}
+                                            <span class="position-badge position-long">
+                                                📈 LONG: ${{ "%.2f"|format(item.position_info.value_usd) }}
+                                            </span>
+                                        {% elif item.position_info.is_short %}
+                                            <span class="position-badge position-short">
+                                                📉 SHORT: -${{ "%.2f"|format(item.position_info.value_usd) }}
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                {% endif %}
                             </td>
                             
                             <td class="px-6 py-4 whitespace-nowrap">
@@ -1508,11 +1715,32 @@
         clearInterval(window.dashboardInterval);
     }
     
-    // Auto-refresh strategies every 60 seconds (1 dakika)
+    // Auto-refresh strategies every 60 seconds (1 dakika) - DÜZELTME (25 Eylül 2025)
+    // HTMX abort hatalarını önlemek için önceki isteği kontrol et
     window.dashboardInterval = setInterval(function() {
         console.log('Dashboard otomatik yenileniyor...', new Date().toLocaleTimeString());
-        // HTMX'e doğrudan GET request gönder
-        htmx.ajax('GET', '/', {target: 'body'});
+        
+        // Önceki istek devam ediyorsa yeni istek gönderme
+        if (window.dashboardRefreshing) {
+            console.log('Önceki dashboard yenileme devam ediyor, atlanıyor...');
+            return;
+        }
+        
+        window.dashboardRefreshing = true;
+        
+        // HTMX'e doğrudan GET request gönder - hata yönetimi ile
+        htmx.ajax('GET', '/', {
+            target: 'body',
+            swap: 'innerHTML',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        }).then(() => {
+            window.dashboardRefreshing = false;
+        }).catch((error) => {
+            console.warn('Dashboard yenileme hatası:', error);
+            window.dashboardRefreshing = false;
+        });
     }, 60000);
     
     // Real-time updates via Server-Sent Events
@@ -1735,5 +1963,44 @@
             event.target.disabled = false;
         }
     });
+    
+    // Kar Durumu Takip Fonksiyonu
+    function profitTracker() {
+        return {
+            loading: false,
+            totalProfit: 0.0,
+            realizedProfit: 0.0,
+            unrealizedProfit: 0.0,
+            totalReturnPct: 0.0,
+            strategyCount: 0,
+            profitableStrategies: 0,
+            losingStrategies: 0,
+            
+            async init() {
+                await this.refreshProfit();
+            },
+            
+            async refreshProfit() {
+                this.loading = true;
+                try {
+                    const response = await fetch('/api/profit-status');
+                    const data = await response.json();
+                    
+                    this.totalProfit = data.total_profit || 0.0;
+                    this.realizedProfit = data.realized_profit || 0.0;
+                    this.unrealizedProfit = data.unrealized_profit || 0.0;
+                    this.totalReturnPct = data.total_return_pct || 0.0;
+                    this.strategyCount = data.strategy_count || 0;
+                    this.profitableStrategies = data.profitable_strategies || 0;
+                    this.losingStrategies = data.losing_strategies || 0;
+                    
+                } catch (error) {
+                    console.error('Kar durumu yükleme hatası:', error);
+                } finally {
+                    this.loading = false;
+                }
+            }
+        }
+    }
 </script>
 {% endblock %}

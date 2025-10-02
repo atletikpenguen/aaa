@@ -4,7 +4,7 @@ Pydantic modelleri - Trading bot için veri yapıları
 
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 
 
@@ -54,8 +54,7 @@ class Symbol(str, Enum):
     AVAXUSDT = "AVAXUSDT"
     SOLUSDT = "SOLUSDT"
     DOGEUSDT = "DOGEUSDT"
-    HUMAUSDT= "HUMAUSDT"
-
+	
 
 class MarketInfo(BaseModel):
     """Market metadata - Binance'ten alınan tick/step size bilgileri"""
@@ -97,31 +96,16 @@ class DCAPosition(BaseModel):
 class State(BaseModel):
     """Strateji durumu - state.json'da saklanır"""
     strategy_id: str
-    symbol: str = Field(default="ETHUSDT")  # Trading sembolü
     strategy_type: StrategyType = Field(default=StrategyType.GRID_OTT)
-    active: bool = Field(default=True)  # Strateji aktif mi?
-    # Datetime alanları JSON serialization için opsiyonel yapıldı
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-    
-    # ============= YENİ PnL TAKİP SİSTEMİ =============
-    initial_balance: float = Field(default=1000.0)  # Başlangıç sermayesi (USD)
-    cash_balance: float = Field(default=1000.0)     # Nakit bakiye (USD)
-    realized_pnl: float = Field(default=0.0)        # Gerçekleşen kar/zarar (USD)
-    
-    # Pozisyon bilgileri (tüm stratejiler için)
-    position_quantity: float = Field(default=0.0)   # Net pozisyon miktarı (+long, -short)
-    position_avg_cost: Optional[float] = None        # Pozisyon ortalama maliyeti
-    position_side: Optional[str] = None              # "long" veya "short" veya None
     
     # Grid+OTT için legacy alanlar
     gf: Optional[float] = None  # Giriş fiyatı (Grid Foundation)
     
     # DCA+OTT için alanlar
     dca_positions: List[DCAPosition] = Field(default_factory=list)
-    avg_cost: Optional[float] = None  # Ortalama maliyet (legacy - position_avg_cost kullanılacak)
-    total_quantity: float = Field(default=0.0)  # Toplam miktar (legacy - position_quantity kullanılacak)
-    cycle_number: int = Field(default=1)  # Döngü sayısı (D1, D2, D3...) - İlk döngü D1 olarak başlar
+    avg_cost: Optional[float] = None  # Ortalama maliyet
+    total_quantity: float = Field(default=0.0)  # Toplam miktar
+    cycle_number: int = Field(default=0)  # Döngü sayısı (D0, D1, D2...)
     cycle_trade_count: int = Field(default=0)  # Döngü içi işlem sayısı (1, 2, 3...)
     
     # Genel alanlar
@@ -130,7 +114,7 @@ class State(BaseModel):
     last_ott_mode: Optional[OTTMode] = None
     total_buy_orders: int = 0
     total_sell_orders: int = 0
-    last_update: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_update: datetime = Field(default_factory=datetime.now)
     
     # Strateji özel veriler
     custom_data: Dict[str, Any] = Field(default_factory=dict)
@@ -203,7 +187,6 @@ class StrategyCreate(BaseModel):
     base_usdt: Optional[float] = Field(default=None, gt=0)
     dca_multiplier: Optional[float] = Field(default=None, ge=1.0, le=5.0)
     min_drop_pct: Optional[float] = Field(default=None, ge=0.5, le=20.0)
-    profit_threshold_pct: Optional[float] = Field(default=None, ge=0.1, le=10.0)
     
     # BOL-Grid için (opsiyonel)
     initial_usdt: Optional[float] = Field(default=None, gt=0)
@@ -320,34 +303,6 @@ class BollingerCrossSignal(str, Enum):
     CROSS_BELOW_MIDDLE = "cross_below_middle"
     CROSS_BELOW_UPPER = "cross_below_upper"
     NO_CROSS = "no_cross"
-
-class PnLHistory(BaseModel):
-    """PnL geçmişi kaydı - her trade sonrası güncellenir"""
-    timestamp: datetime
-    strategy_id: str
-    current_price: float  # Güncel sembol fiyatı
-    
-    # Bakiye bilgileri
-    total_balance: float  # Toplam bakiye (nakit + açık pozisyon değeri)
-    cash_balance: float   # Nakit bakiye
-    position_value: float # Açık pozisyon değeri
-    
-    # Kar/zarar bilgileri
-    realized_pnl: float   # Gerçekleşen kar/zarar
-    unrealized_pnl: float # Gerçekleşmemiş kar/zarar
-    total_pnl: float      # Toplam kar/zarar
-    total_return_pct: float # Getiri yüzdesi
-    
-    # Pozisyon bilgileri
-    position_quantity: float # Net pozisyon miktarı (+long, -short)
-    position_avg_cost: Optional[float] = None # Pozisyon ortalama fiyatı
-    position_side: Optional[str] = None # "long", "short" veya None
-    
-    # Tetikleyen işlem bilgisi (opsiyonel)
-    trigger_trade_id: Optional[str] = None
-    trigger_side: Optional[OrderSide] = None
-    trigger_price: Optional[float] = None
-    trigger_quantity: Optional[float] = None
 
 class OrderLog(BaseModel):
     """Emir log kaydı - tüm stratejiler için ortak log dosyasında"""

@@ -1,0 +1,2 @@
+timestamp,strategy_id,current_price,total_balance,cash_balance,position_value,realized_pnl,unrealized_pnl,total_pnl,total_return_pct,position_quantity,position_avg_cost,position_side,trigger_trade_id,trigger_side,trigger_price,trigger_quantity
+2025-10-01T17:23:36.708426,f688e233,30.628,1000.0,1000.0,61.256,0.0,0.0,0.0,0.0,2.0,30.628,long,33289701944,buy,30.628,1.0

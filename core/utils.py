@@ -242,20 +242,23 @@ def setup_logger(name: str = "trading_bot", log_file: str = None, clear_interval
     log_level_str = os.getenv('LOG_LEVEL', 'INFO').upper()
     log_level = getattr(logging, log_level_str, logging.INFO)
     
+    # DEBUG: Logger seviyesini zorla INFO yap
+    #log_level = logging.INFO
+    
     logger = logging.getLogger(name)
     logger.setLevel(log_level)
     
-    # Eğer handler zaten varsa, tekrar ekleme
-    if logger.handlers:
-        return logger
+    # Eğer handler zaten varsa, tekrar ekleme (reload sorunları için temizle)
+    if logger.hasHandlers():
+        logger.handlers.clear()
     
     # Günlük log dosyası için basit FileHandler (RotatingFileHandler yerine)
     # Çünkü her gün yeni dosya oluşturulacak
     file_handler = logging.FileHandler(log_file, encoding='utf-8')
     file_handler.setLevel(log_level)
     
-    # Temizleme özellikli console handler
-    console_handler = CleanConsoleHandler(clear_interval)
+    # Normal console handler (temizleme özelliği kaldırıldı)
+    console_handler = logging.StreamHandler()
     console_handler.setLevel(log_level)
     
     # Formatters
@@ -264,8 +267,8 @@ def setup_logger(name: str = "trading_bot", log_file: str = None, clear_interval
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
-    # Renkli formatter (terminal için)
-    console_formatter = ColoredFormatter(
+    # Basit formatter (terminal için)
+    console_formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
     
@@ -504,7 +507,7 @@ def generate_strategy_id() -> str:
 
 def validate_symbol(symbol: str) -> bool:
     """Sembol validasyonu"""
-    valid_symbols = ["BTCUSDT", "ETHUSDT", "AVAXUSDT", "SOLUSDT", "DOGEUSDT"]
+    valid_symbols = ["BTCUSDT", "ETHUSDT", "AVAXUSDT", "SOLUSDT", "DOGEUSDT", "HUMAUSDT","ZROUSDT"]
     return symbol in valid_symbols
 
 

@@ -11,3 +11,5 @@ python-multipart>=0.0.6
 sse-starlette>=1.6.5
 aiohttp>=3.8.0
 colorama>=0.4.4
+openpyxl>=3.1.0
+xlrd>=2.0.1

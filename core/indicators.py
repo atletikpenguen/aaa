@@ -9,90 +9,291 @@ from .models import OTTResult, OTTMode
 from .utils import logger
 
 
+def calculate_cmo(prices: List[float], period: int = 9) -> List[float]:
+    """
+    Chande Momentum Oscillator (CMO) hesapla
+    """
+    try:
+        if len(prices) < period + 1:
+            return []
+        
+        cmo_values = []
+        
+        for i in range(period, len(prices)):
+            # Son period+1 fiyatı al
+            price_slice = prices[i-period:i+1]
+            
+            # Fiyat değişimlerini hesapla
+            gains = []
+            losses = []
+            
+            for j in range(1, len(price_slice)):
+                change = price_slice[j] - price_slice[j-1]
+                if change > 0:
+                    gains.append(change)
+                    losses.append(0)
+                else:
+                    gains.append(0)
+                    losses.append(abs(change))
+            
+            # CMO hesapla
+            sum_gains = sum(gains)
+            sum_losses = sum(losses)
+            
+            if sum_gains + sum_losses == 0:
+                cmo = 0
+            else:
+                cmo = ((sum_gains - sum_losses) / (sum_gains + sum_losses)) * 100
+            
+            cmo_values.append(cmo)
+        
+        return cmo_values
+        
+    except Exception as e:
+        logger.error(f"CMO hesaplama hatası: {e}")
+        return []
+
+
+def calculate_vidya(prices: List[float], period: int = 20, cmo_period: int = 9) -> List[float]:
+    """
+    VIDYA (Variable Index Dynamic Average) hesapla
+    """
+    try:
+        if len(prices) < max(period, cmo_period) + 1:
+            return []
+        
+        # CMO hesapla
+        cmo_values = calculate_cmo(prices, cmo_period)
+        
+        if not cmo_values:
+            return []
+        
+        # Alpha değeri
+        alpha = 2.0 / (period + 1)
+        
+        # VIDYA hesaplama
+        vidya_values = []
+        vma = prices[period-1]  # İlk değer
+        
+        # CMO değerleri ile VIDYA hesapla
+        start_idx = max(period, cmo_period)
+        
+        for i in range(start_idx, len(prices)):
+            cmo_idx = i - start_idx
+            if cmo_idx < len(cmo_values):
+                cmo = cmo_values[cmo_idx]
+                # VIDYA formülü: vma = vma[1] + alpha * abs(cmo) * (close - vma[1])
+                vma = vma + alpha * abs(cmo) / 100.0 * (prices[i] - vma)
+                vidya_values.append(vma)
+            else:
+                vidya_values.append(vma)
+        
+        return vidya_values
+        
+    except Exception as e:
+        logger.error(f"VIDYA hesaplama hatası: {e}")
+        return []
+
+
 def calculate_ema(prices: List[float], period: int) -> List[float]:
     """
-    Exponential Moving Average hesapla
+    Exponential Moving Average hesapla - OVERFLOW KORUMALI VERSİYON
     """
-    if len(prices) < period:
+    try:
+        # Güvenlik kontrolleri - overflow önleme
+        max_safe_value = 1e15  # 1 katrilyon - çok büyük değerler için limit
+        min_safe_value = 1e-15  # Çok küçük değerler için limit
+        
+        if len(prices) < period or period <= 0:
+            return []
+        
+        # Fiyat değerlerini güvenli aralıkta kontrol et
+        safe_prices = []
+        for price in prices:
+            try:
+                price_float = float(price)
+                if abs(price_float) > max_safe_value or price_float <= 0:
+                    logger.warning(f"EMA hesaplama - Geçersiz fiyat: {price_float}")
+                    return []
+                safe_prices.append(price_float)
+            except (ValueError, TypeError, OverflowError):
+                logger.warning(f"EMA hesaplama - Fiyat dönüşüm hatası: {price}")
+                return []
+        
+        # NumPy ile daha hızlı hesaplama - overflow korumalı
+        try:
+            prices_array = np.array(safe_prices, dtype=float)
+            alpha = 2.0 / (period + 1)
+            
+            # Alpha değeri kontrolü
+            if alpha <= 0 or alpha > 1:
+                logger.warning(f"EMA hesaplama - Geçersiz alpha: {alpha}")
+                return []
+            
+            # İlk değer SMA - overflow korumalı
+            sma_first = np.mean(prices_array[:period])
+            if abs(sma_first) > max_safe_value or sma_first <= 0:
+                logger.warning(f"EMA hesaplama - Geçersiz SMA: {sma_first}")
+                return []
+            
+            ema_values = [sma_first]
+            
+            # EMA hesaplama - overflow korumalı
+            for i in range(period, len(prices_array)):
+                try:
+                    ema = alpha * prices_array[i] + (1 - alpha) * ema_values[-1]
+                    
+                    # Overflow kontrolü
+                    if abs(ema) > max_safe_value or ema <= 0:
+                        logger.warning(f"EMA hesaplama - Overflow riski: {ema}")
+                        # Son geçerli değeri kullan
+                        ema = ema_values[-1]
+                    
+                    ema_values.append(ema)
+                    
+                except (OverflowError, ValueError) as e:
+                    logger.warning(f"EMA hesaplama - Hesaplama hatası: {e}")
+                    # Son geçerli değeri kullan
+                    ema_values.append(ema_values[-1])
+            
+            return ema_values
+            
+        except (OverflowError, ValueError, ZeroDivisionError) as e:
+            logger.error(f"EMA hesaplama - NumPy hatası: {e}")
+            return []
+            
+    except Exception as e:
+        logger.error(f"EMA hesaplama - Genel hata: {e}")
         return []
-    
-    # NumPy ile daha hızlı hesaplama
-    prices_array = np.array(prices, dtype=float)
-    alpha = 2.0 / (period + 1)
-    
-    # İlk değer SMA
-    sma_first = np.mean(prices_array[:period])
-    ema_values = [sma_first]
-    
-    # EMA hesaplama
-    for i in range(period, len(prices_array)):
-        ema = alpha * prices_array[i] + (1 - alpha) * ema_values[-1]
-        ema_values.append(ema)
-    
-    return ema_values
 
 
 def calculate_sma(prices: List[float], period: int) -> List[float]:
     """
-    Simple Moving Average hesapla
+    Simple Moving Average hesapla - OVERFLOW KORUMALI VERSİYON
     """
-    if len(prices) < period or period <= 0:
+    try:
+        # Güvenlik kontrolleri - overflow önleme
+        max_safe_value = 1e15  # 1 katrilyon - çok büyük değerler için limit
+        min_safe_value = 1e-15  # Çok küçük değerler için limit
+        
+        if len(prices) < period or period <= 0:
+            return []
+        
+        # Fiyat değerlerini güvenli aralıkta kontrol et
+        safe_prices = []
+        for price in prices:
+            try:
+                price_float = float(price)
+                if abs(price_float) > max_safe_value or price_float <= 0:
+                    logger.warning(f"SMA hesaplama - Geçersiz fiyat: {price_float}")
+                    return []
+                safe_prices.append(price_float)
+            except (ValueError, TypeError, OverflowError):
+                logger.warning(f"SMA hesaplama - Fiyat dönüşüm hatası: {price}")
+                return []
+        
+        sma_values = []
+        for i in range(period - 1, len(safe_prices)):
+            window = safe_prices[i - period + 1:i + 1]
+            if len(window) > 0 and period > 0:
+                try:
+                    sma = sum(window) / period
+                    
+                    # Overflow kontrolü
+                    if abs(sma) > max_safe_value or sma <= 0:
+                        logger.warning(f"SMA hesaplama - Overflow riski: {sma}")
+                        # Son geçerli değeri kullan veya varsayılan değer
+                        if sma_values:
+                            sma = sma_values[-1]
+                        else:
+                            sma = safe_prices[i]  # Mevcut fiyatı kullan
+                    
+                    sma_values.append(sma)
+                    
+                except (OverflowError, ValueError, ZeroDivisionError) as e:
+                    logger.warning(f"SMA hesaplama - Hesaplama hatası: {e}")
+                    # Son geçerli değeri kullan veya mevcut fiyatı
+                    if sma_values:
+                        sma_values.append(sma_values[-1])
+                    else:
+                        sma_values.append(safe_prices[i])
+        
+        return sma_values
+        
+    except Exception as e:
+        logger.error(f"SMA hesaplama - Genel hata: {e}")
         return []
-    
-    sma_values = []
-    for i in range(period - 1, len(prices)):
-        window = prices[i - period + 1:i + 1]
-        if len(window) > 0 and period > 0:
-            sma = sum(window) / period
-            sma_values.append(sma)
-    
-    return sma_values
 
 
 def calculate_ott(close_prices: List[float], period: int, opt: float, strategy_name: str = "Unknown") -> Optional[OTTResult]:
     """
-    OTT (Optimized Trend Tracker) hesapla
+    OTT (Optimized Trend Tracker) hesapla - PINE SCRIPT MANTĞI
+    
+    Pine Script koduna göre:
+    1. VIDYA (Variable Index Dynamic Average) hesapla
+    2. Trailing stop mantığı ile longStop/shortStop hesapla
+    3. OTT trend çizgisi hesapla
+    4. OTT < OTT_SUP → AL, OTT ≥ OTT_SUP → SAT
     
     Args:
         close_prices: Kapanış fiyatları listesi
-        period: EMA periyodu
-        opt: Optimizasyon yüzdesi (2.0 = %2)
+        period: VIDYA periyodu (20)
+        opt: Factor değeri (2.0)
         strategy_name: Strateji adı (log için)
         
     Returns:
         OTTResult object veya None
     """
     try:
-        if len(close_prices) < period:
-            logger.warning(f"OTT hesaplama için yeterli veri yok. Gerekli: {period}, Mevcut: {len(close_prices)}")
+        # Güvenlik kontrolleri
+        if len(close_prices) < period + 9:  # VIDYA için CMO(9) + period gerekli
+            logger.warning(f"OTT hesaplama için yeterli veri yok. Gerekli: {period + 9}, Mevcut: {len(close_prices)}")
             return None
         
-        # EMA (baseline) hesapla
-        ema_values = calculate_ema(close_prices, period)
+        # VIDYA (destek çizgisi) hesapla
+        vidya_values = calculate_vidya(close_prices, period, cmo_period=9)
         
-        if not ema_values:
-            logger.warning("EMA hesaplanamadı")
+        if not vidya_values:
+            logger.warning("VIDYA hesaplanamadı")
             return None
         
-        # Son EMA değerini baseline olarak al
-        baseline = ema_values[-1]
-        current_price = close_prices[-1]
+        # Son VIDYA değerini al (OTT_SUP)
+        vma = float(vidya_values[-1])  # OTT_SUP (destek çizgisi)
+        current_price = float(close_prices[-1])
         
-        # OTT bantları hesapla
-        upper = baseline * (1 + opt / 100)
-        lower = baseline * (1 - opt / 100)
+        # Factor ve offset hesaplama
+        factor = float(opt)  # opt = factor (2.0)
+        offset = vma * factor / 100.0
         
-        # OTT modu belirle (spesifikasyona göre basit tanım)
-        # close > baseline → AL, değilse SAT
-        mode = OTTMode.AL if current_price > baseline else OTTMode.SAT
+        # Trailing stop hesaplama
+        long_stop = vma - offset
+        short_stop = vma + offset
         
-        logger.info(f"OTT hesaplandı [{strategy_name}] - Mode: {mode}, Baseline: {baseline:.6f}, Price: {current_price:.6f}")
+        # Basit trend yönü belirleme (fiyat > vma → uptrend)
+        dir_value = 1 if current_price > vma else -1
+        
+        # OTT trend çizgisi hesaplama
+        if dir_value == 1:
+            ott_line = long_stop * (1 + factor / 200)
+        else:
+            ott_line = short_stop * (1 - factor / 200)
+        
+        # OTT sinyal mantığı: OTT < OTT_SUP → AL, OTT ≥ OTT_SUP → SAT
+        # ott_line = OTT, vma = OTT_SUP
+        mode = OTTMode.AL if ott_line < vma else OTTMode.SAT
+        
+        logger.info(f"OTT Pine Script mantığı [{strategy_name}]:")
+        logger.info(f"  VMA (OTT_SUP): {vma:.2f}")
+        logger.info(f"  OTT Line: {ott_line:.2f}")
+        logger.info(f"  Factor: {factor}, Offset: {offset:.2f}")
+        logger.info(f"  Long Stop: {long_stop:.2f}, Short Stop: {short_stop:.2f}")
+        logger.info(f"  Mode: {mode} (OTT {ott_line:.2f} {'<' if ott_line < vma else '>='} OTT_SUP {vma:.2f})")
         
         return OTTResult(
             mode=mode,
-            baseline=baseline,
-            upper=upper,
-            lower=lower,
+            baseline=ott_line,  # OTT trend çizgisi
+            upper=short_stop,   # Resistance
+            lower=long_stop,    # Support  
             current_price=current_price
         )
         

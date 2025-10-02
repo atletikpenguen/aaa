@@ -27,6 +27,7 @@ from .utils import (
 )
 from .telegram import telegram_notifier
 from .debug_monitor import universal_debug_monitor, AlertLevel
+from .order_manager import OrderManager  # YENİ
 
 
 class StrategyEngine:
@@ -39,7 +40,10 @@ class StrategyEngine:
         self.active_strategies: Dict[str, bool] = {}
         self.strategy_locks: Dict[str, asyncio.Lock] = {}
         self.error_counts: Dict[str, int] = {}  # strategy_id -> error_count
-        self.max_errors = 3  # Maksimum hata sayısı
+        self.max_errors = 5 # Maksimum hata sayısı
+        
+        # YENİ: Her strateji için OrderManager tutacak
+        self.order_managers: Dict[str, OrderManager] = {}
         
         # Risk kontrolü mesajları için cooldown sistemi
         self.risk_message_cooldowns: Dict[str, datetime] = {}  # strategy_id -> last_message_time
@@ -56,6 +60,16 @@ class StrategyEngine:
         }
         
         logger.info(f"Strategy Engine başlatıldı. Desteklenen stratejiler: {list(self.strategy_handlers.keys())}")
+    
+    # YENİ: Strateji için OrderManager al/oluştur
+    def get_order_manager(self, strategy_id: str) -> OrderManager:
+        if strategy_id not in self.order_managers:
+            self.order_managers[strategy_id] = OrderManager(
+                storage=storage, 
+                binance=binance_client, 
+                strategy_id=strategy_id
+            )
+        return self.order_managers[strategy_id]
     
     def _can_send_risk_message(self, strategy_id: str) -> bool:
         """
@@ -119,6 +133,12 @@ class StrategyEngine:
         
         async with strategy_lock:
             try:
+                # YENİ: OrderManager'ı al
+                order_manager = self.get_order_manager(strategy.id)
+
+                # Strateji parametrelerini kontrol et ve eksik parametreleri ekle
+                strategy = self._ensure_strategy_parameters(strategy)
+                
                 # Strateji handler'ını al
                 handler = self.get_strategy_handler(strategy.strategy_type)
                 if not handler:
@@ -188,14 +208,11 @@ class StrategyEngine:
                         logger.warning(f"OTT hesaplanamadı: {strategy.id}")
                         return {'error': 'OTT hesaplanamadı'}
                 
-                # 🛡️ Açık emir varken yeni emir engelle
-                if state.open_orders:
-                    logger.debug(f"⏳ {strategy.id}: {len(state.open_orders)} açık emir var, yeni emir bekliyor...")
-                    signal = TradingSignal(
-                        should_trade=False,
-                        reason=f"Açık emir beklemede: {len(state.open_orders)} emir"
-                    )
-                    order_placed = False
+                # 🛡️ YENİ KONTROL: OrderManager'da bekleyen emir var mı?
+                order_placed = False  # Değişkeni başta tanımla
+                if order_manager.has_pending_orders():
+                    logger.debug(f"⏳ {strategy.id}: {order_manager.get_pending_order_count()} bekleyen emir var, yeni sinyal işlenmiyor.")
+                    signal = TradingSignal(should_trade=False, reason="Bekleyen emir var.")
                 else:
                     # Strateji özel sinyal hesaplama
                     signal = await handler.calculate_signal(
@@ -203,7 +220,6 @@ class StrategyEngine:
                     )
                     
                     # Sinyal varsa pozisyon riski kontrol et
-                    order_placed = False
                     if signal.should_trade:
                         # Risk kontrolü
                         risk_check = await self._check_position_risk(signal, strategy)
@@ -242,7 +258,9 @@ class StrategyEngine:
                                 'message': f"Risk kontrolü: {risk_check['reason']}"
                             }
                         
-                        order_placed = await self.execute_trading_signal(strategy, state, signal)
+                    # YENİ: Emir gönderme mantığı OrderManager'a devredildi
+                    order_result = await self.execute_trading_signal(strategy, signal)
+                    order_placed = order_result is not None
                 
                 # Bar timestamp güncelle
                 state.last_bar_timestamp = last_bar['timestamp']
@@ -290,257 +308,51 @@ class StrategyEngine:
     async def execute_trading_signal(
         self, 
         strategy: Strategy, 
-        state: State, 
         signal: TradingSignal
-    ) -> bool:
-        """Unified trading sinyal uygulama"""
+    ) -> Optional[Dict[str, Any]]:
+        """Trading sinyalini OrderManager aracılığıyla uygula"""
         
         if not signal.should_trade:
-            return False
+            return None
         
         try:
-            # Emir türünü belirle (market veya limit)
-            order_type = signal.strategy_specific_data.get('order_type', 'LIMIT') if signal.strategy_specific_data else 'LIMIT'
+            order_manager = self.get_order_manager(strategy.id)
             
-            if order_type == "MARKET":
-                # Market emir oluştur
-                order_result = await binance_client.create_market_order(
-                    symbol=strategy.symbol.value,
-                    side=signal.side,
-                    quantity=signal.quantity,
-                    strategy_id=strategy.id,
-                    strategy_type=strategy.strategy_type.value,
-                    grid_level=signal.strategy_specific_data.get('z', None) if signal.strategy_specific_data else None
-                )
-            else:
-                # Limit emir oluştur
-                order_result = await binance_client.create_limit_order(
-                    symbol=strategy.symbol.value,
-                    side=signal.side,
-                    quantity=signal.quantity,
-                    price=signal.target_price,
-                    strategy_id=strategy.id,
-                    strategy_type=strategy.strategy_type.value,
-                    grid_level=signal.strategy_specific_data.get('z', None) if signal.strategy_specific_data else None
-                )
+            # OrderManager aracılığıyla emir oluştur
+            # Market emirleri için price=None, Limit emirleri için target_price kullan
+            order_data = await order_manager.create_order(
+                side=signal.side,
+                quantity=signal.quantity,
+                price=signal.target_price if signal.target_price else None,
+                order_type="MARKET" if not signal.target_price else "LIMIT"
+            )
             
-            if order_result:
-                # Emir türüne göre price alanını ayarla
-                order_type = signal.strategy_specific_data.get('order_type', 'LIMIT') if signal.strategy_specific_data else 'LIMIT'
-                order_price = signal.target_price if order_type == "LIMIT" else None
-                
-                # Açık emirlere ekle
-                new_order = OpenOrder(
-                    order_id=str(order_result['id']),
-                    side=signal.side,
-                    price=order_price,  # Market emirlerde None
-                    quantity=signal.quantity,
-                    z=signal.strategy_specific_data.get('z', 0) if signal.strategy_specific_data else 0,
-                    timestamp=datetime.now(timezone.utc),
-                    strategy_specific_data=signal.strategy_specific_data if signal.strategy_specific_data else {}
-                )
-                
-                state.open_orders.append(new_order)
-                state.last_update = datetime.now(timezone.utc)
-                
-                # State'i kaydet
-                await storage.save_state(state)
-                
+            if order_data:
                 price_info = f" @ {signal.target_price}" if signal.target_price else " (Market)"
-                
                 log_trading_action(
-                    f"[{strategy.strategy_type.value}] {order_type} emir oluşturuldu: {strategy.id} - {signal.side.value} {signal.quantity}{price_info}",
-                    action_type="ORDER"
+                    f"[{strategy.strategy_type.value}] Emir oluşturma isteği gönderildi: {strategy.id} - {signal.side.value} {signal.quantity}{price_info}",
+                    action_type="ORDER_CREATE"
                 )
                 
-                # Telegram bildirimi gönder - başarısız olursa stratejiyi durdur
-                try:
-                    telegram_success = await telegram_notifier.send_trade_notification(
-                        strategy_name=f"{strategy.name} ({strategy.strategy_type.value})",
-                        symbol=strategy.symbol.value,
-                        side=signal.side.value,
-                        quantity=signal.quantity,
-                        price=signal.target_price,
-                        order_id=str(order_result['id']),
-                        order_type=order_type
-                    )
-                    
-                    # Telegram mesajı başarısız olduysa stratejiyi durdur
-                    if not telegram_success:
-                        logger.error(f"🚨 TELEGRAM MESAJI BAŞARISIZ - Strateji durduruluyor: {strategy.id}")
-                        self.active_strategies[strategy.id] = False
-                        strategy.active = False
-                        await storage.save_strategy(strategy)
-                        
-                        # Strateji durdurma bildirimi gönder (bu da başarısız olabilir ama deneyelim)
-                        try:
-                            await telegram_notifier.send_strategy_notification(
-                                strategy_name=strategy.name,
-                                symbol=strategy.symbol.value,
-                                message_type="error",
-                                details="Telegram mesajı gönderilemediği için strateji durduruldu"
-                            )
-                        except:
-                            pass  # Bu da başarısız olursa sessizce geç
-                        
-                        return False
-                        
-                except Exception as e:
-                    logger.error(f"Telegram bildirimi kritik hatası: {e}")
-                    # Telegram hatası da stratejiyi durdursun
-                    logger.error(f"🚨 TELEGRAM HATASI - Strateji durduruluyor: {strategy.id}")
-                    self.active_strategies[strategy.id] = False
-                    strategy.active = False
-                    await storage.save_strategy(strategy)
-                    return False
+                # Telegram bildirimi burada GÖNDERİLMEMELİ. 
+                # Bildirim, emir 'SUBMITTED' (borsa tarafından onaylandı) olduğunda OrderManager tarafından gönderilmeli.
                 
-                return True
+                return order_data
             else:
-                logger.error(f"Emir oluşturulamadı: {strategy.id}")
-                return False
+                logger.error(f"OrderManager aracılığıyla emir oluşturulamadı: {strategy.id}")
+                return None
                 
         except Exception as e:
             logger.error(f"Trading sinyal uygulama hatası {strategy.id}: {e}")
-            return False
+            return None
     
     async def check_order_fills(self, strategy: Strategy, state: State) -> list[Trade]:
         """
-        Unified order fill kontrolü - tüm strateji türleri için
+        DEPRECATED: Bu fonksiyon artık kullanılmıyor.
+        Emir takibi OrderManager.reconcile_orders tarafından yapılıyor.
         """
-        if not strategy:
-            logger.error("check_order_fills: strategy parametresi None")
-            return []
-            
-        if not state or not state.open_orders:
-            return []
-        
-        filled_trades = []
-        order_ids = [order.order_id for order in state.open_orders]
-        
-        logger.debug(f"🔍 {strategy.id}: {len(order_ids)} adet açık emir kontrol ediliyor")
-        
-        try:
-            # Binance'den emir durumlarını kontrol et
-            fills = await binance_client.check_order_fills(
-                strategy.symbol.value, 
-                order_ids, 
-                strategy_id=strategy.id,
-                strategy_type=strategy.strategy_type.value
-            )
-            
-            if fills:
-                log_trading_action(
-                    f"✅ [{strategy.strategy_type.value}] {strategy.id}: {len(fills)} adet emir gerçekleşmiş!",
-                    action_type="TRADE"
-                )
-            
-            # Strateji handler'ını al
-            handler = self.get_strategy_handler(strategy.strategy_type)
-            if not handler:
-                logger.error(f"Desteklenmeyen strateji türü: {strategy.strategy_type}")
-                return []
-            
-            for fill in fills:
-                # İlgili order'ı bul
-                filled_order = None
-                for order in state.open_orders:
-                    if order.order_id == fill['order_id']:
-                        filled_order = order
-                        break
-                
-                if not filled_order:
-                    continue
-                
-                # Döngü bilgisini hazırla (DCA+OTT için)
-                cycle_info = None
-                if strategy.strategy_type == StrategyType.DCA_OTT:
-                    # DCA+OTT için döngü bilgisini oluştur
-                    cycle_number = filled_order.strategy_specific_data.get('cycle_number', state.cycle_number)
-                    cycle_trade_count = filled_order.strategy_specific_data.get('cycle_trade_count', state.cycle_trade_count)
-                    
-                    # Döngü bilgisini oluştur
-                    if cycle_number > 0 and cycle_trade_count > 0:
-                        # Normal durum: hem döngü hem işlem sayısı var
-                        cycle_info = f"D{cycle_number}-{cycle_trade_count}"
-                    elif cycle_number > 0 and cycle_trade_count == 0:
-                        # Full exit sonrası: döngü var ama işlem sayısı sıfır
-                        # Bu durumda state'den mevcut değerleri kullan
-                        cycle_info = f"D{state.cycle_number}-{state.cycle_trade_count + 1}"
-                    else:
-                        # Fallback: State'den mevcut döngü bilgisini kullan
-                        if state.cycle_number > 0:
-                            cycle_info = f"D{state.cycle_number}-{state.cycle_trade_count + 1}"
-                        else:
-                            # İlk alım durumu
-                            cycle_info = "D1-1"
-                
-                # 🛡️ DUPLICATE FILL KONTROLÜ: Aynı order_id ile daha önce trade kaydedilmiş mi?
-                if strategy.strategy_type == StrategyType.DCA_OTT:
-                    # DCA stratejileri için duplicate kontrol
-                    existing_trades = await storage.load_trades(strategy.id, limit=100)
-                    for existing_trade in existing_trades:
-                        if existing_trade.order_id == fill['order_id']:
-                            logger.warning(f"⚠️ DUPLICATE FILL: Order {fill['order_id']} zaten trades.csv'de kayıtlı, atlanıyor")
-                            continue  # Bu fill'i atla
-                
-                # Trade kaydı oluştur
-                trade = Trade(
-                    timestamp=fill['timestamp'],
-                    strategy_id=strategy.id,
-                    side=filled_order.side,
-                    price=fill['price'],  # Gerçekleşen ortalama fiyat
-                    quantity=fill['filled_qty'],
-                    z=filled_order.z,  # Grid için, DCA için 0
-                    notional=fill['price'] * fill['filled_qty'],
-                    gf_before=state.gf if state.gf is not None else fill['price'],
-                    gf_after=0,  # Handler tarafından güncellenecek
-                    order_id=fill['order_id'],
-                    limit_price=fill.get('limit_price'),
-                    strategy_specific_data=filled_order.strategy_specific_data,  # OpenOrder'dan strategy_specific_data al
-                    cycle_info=cycle_info  # DCA döngü bilgisi
-                )
-                
-                # Komisyon bilgisini ekle
-                if fill.get('fee') and fill['fee'].get('cost'):
-                    trade.commission = float(fill['fee']['cost'])
-                
-                # Strateji özel fill işlemi
-                custom_updates = await handler.process_fill(strategy, state, trade)
-                
-                # Trade'in gf_after ve limit_price'ını güncelle (Grid için)
-                if strategy.strategy_type == StrategyType.GRID_OTT:
-                    trade.gf_after = state.gf if state.gf is not None else trade.price
-                    # Grid stratejilerinde limit_price = yeni GF olmalı
-                    trade.limit_price = state.gf if state.gf is not None else trade.price
-                else:
-                    trade.gf_after = trade.gf_before  # DCA için GF kullanmıyor
-                
-                filled_trades.append(trade)
-                
-                # Strateji istatistiklerini güncelle
-                await self._update_strategy_stats(strategy, trade)
-                
-                logger.info(f"[{strategy.strategy_type.value}] Emir doldu: {strategy.id} - {trade.side.value} {trade.quantity} @ {trade.price}")
-            
-            # Doldurulan emirleri open_orders'dan çıkar
-            filled_order_ids = [fill['order_id'] for fill in fills]
-            state.open_orders = [o for o in state.open_orders if o.order_id not in filled_order_ids]
-            
-            # Trade'leri kaydet
-            for trade in filled_trades:
-                await storage.save_trade(trade)
-            
-            # State'i kaydet
-            if filled_trades:
-                state.last_update = datetime.now(timezone.utc)
-                await storage.save_state(state)
-            
-            return filled_trades
-            
-        except Exception as e:
-            strategy_id = strategy.id if strategy else "UNKNOWN"
-            logger.error(f"Order fill kontrol hatası {strategy_id}: {e}")
-            return []
+        logger.warning(f"DEPRECATED: check_order_fills fonksiyonu kullanıldı. OrderManager sistemi aktif.")
+        return []
     
     async def _update_strategy_stats(self, strategy: Strategy, trade: Trade):
         """Strateji istatistiklerini güncelle"""
@@ -567,6 +379,7 @@ class StrategyEngine:
         
         state = State(
             strategy_id=strategy.id,
+            symbol=strategy.symbol,  # ✅ Eksik olan satır eklendi
             strategy_type=strategy.strategy_type,
             gf=gf,
             custom_data=custom_data
@@ -818,6 +631,36 @@ class StrategyEngine:
         
         except Exception as e:
             logger.error(f"Background health check hatası {strategy.id}: {e}")
+
+    def _ensure_strategy_parameters(self, strategy: Strategy) -> Strategy:
+        """
+        Strateji parametrelerini kontrol et ve eksik parametreleri varsayılan değerlerle ekle
+        """
+        try:
+            # DCA+OTT stratejisi için eksik parametreleri kontrol et
+            if strategy.strategy_type == StrategyType.DCA_OTT:
+                # Eksik parametreleri varsayılan değerlerle ekle
+                if 'profit_threshold_pct' not in strategy.parameters:
+                    strategy.parameters['profit_threshold_pct'] = 1.0
+                    logger.info(f"Strateji {strategy.id} için profit_threshold_pct parametresi eklendi (varsayılan: 1.0)")
+                
+                if 'base_usdt' not in strategy.parameters:
+                    strategy.parameters['base_usdt'] = 100.0
+                    logger.info(f"Strateji {strategy.id} için base_usdt parametresi eklendi (varsayılan: 100.0)")
+                
+                if 'dca_multiplier' not in strategy.parameters:
+                    strategy.parameters['dca_multiplier'] = 1.5
+                    logger.info(f"Strateji {strategy.id} için dca_multiplier parametresi eklendi (varsayılan: 1.5)")
+                
+                if 'min_drop_pct' not in strategy.parameters:
+                    strategy.parameters['min_drop_pct'] = 2.0
+                    logger.info(f"Strateji {strategy.id} için min_drop_pct parametresi eklendi (varsayılan: 2.0)")
+            
+            return strategy
+            
+        except Exception as e:
+            logger.error(f"Strateji parametre kontrolü hatası {strategy.id}: {e}")
+            return strategy
 
 
 # Global strategy engine instance

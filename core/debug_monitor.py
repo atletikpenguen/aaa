@@ -467,27 +467,49 @@ class DCADebugMonitor:
                 prev_trade = sorted_trades[i-1]
                 curr_trade = sorted_trades[i]
                 
-                # DCA stratejileri için ardışık alım kontrolü
+                # DCA stratejileri için ardışık alım kontrolü - DÜZELTME (25 Eylül 2025)
+                # Bu kontrol çok katıydı, DCA'da ardışık alımlar normal olabilir
+                # Sadece çok büyük fiyat artışlarını kontrol et
                 if strategy.strategy_type == StrategyType.DCA_OTT:
                     if prev_trade.side.value == 'buy' and curr_trade.side.value == 'buy':
                         if curr_trade.price > prev_trade.price:
                             price_increase = ((curr_trade.price - prev_trade.price) / prev_trade.price) * 100
-                            issues.append({
-                                'type': 'consecutive_buy_price_increase',
-                                'severity': 'critical',
-                                'strategy_type': 'dca_ott',
-                                'prev_trade': {
-                                    'timestamp': prev_trade.timestamp.isoformat(),
-                                    'price': prev_trade.price,
-                                    'quantity': prev_trade.quantity
-                                },
-                                'curr_trade': {
-                                    'timestamp': curr_trade.timestamp.isoformat(),
-                                    'price': curr_trade.price,
-                                    'quantity': curr_trade.quantity
-                                },
-                                'price_increase_pct': price_increase
-                            })
+                            # Sadece %5'ten büyük artışları kritik olarak işaretle
+                            if price_increase > 5.0:  # %5'ten büyük artış
+                                issues.append({
+                                    'type': 'consecutive_buy_price_increase',
+                                    'severity': 'critical',
+                                    'strategy_type': 'dca_ott',
+                                    'prev_trade': {
+                                        'timestamp': prev_trade.timestamp.isoformat(),
+                                        'price': prev_trade.price,
+                                        'quantity': prev_trade.quantity
+                                    },
+                                    'curr_trade': {
+                                        'timestamp': curr_trade.timestamp.isoformat(),
+                                        'price': curr_trade.price,
+                                        'quantity': curr_trade.quantity
+                                    },
+                                    'price_increase_pct': price_increase
+                                })
+                            else:
+                                # Küçük artışları sadece warning olarak işaretle
+                                issues.append({
+                                    'type': 'consecutive_buy_price_increase',
+                                    'severity': 'warning',
+                                    'strategy_type': 'dca_ott',
+                                    'prev_trade': {
+                                        'timestamp': prev_trade.timestamp.isoformat(),
+                                        'price': prev_trade.price,
+                                        'quantity': prev_trade.quantity
+                                    },
+                                    'curr_trade': {
+                                        'timestamp': curr_trade.timestamp.isoformat(),
+                                        'price': curr_trade.price,
+                                        'quantity': curr_trade.quantity
+                                    },
+                                    'price_increase_pct': price_increase
+                                })
                 
                 # Grid stratejileri için mantık kontrolleri
                 elif strategy.strategy_type == StrategyType.GRID_OTT:

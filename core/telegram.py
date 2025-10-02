@@ -29,6 +29,14 @@ class TelegramNotifier:
             logger.debug(f"Telegram kapalı - mesaj gönderilmedi: {text[:50]}...")
             return False
         
+        # HTML entity'leri düzgün escape et
+        if parse_mode == "Markdown":
+            # Markdown için özel karakterleri escape et
+            text = text.replace("_", "\\_").replace("*", "\\*").replace("[", "\\[").replace("]", "\\]").replace("(", "\\(").replace(")", "\\)").replace("`", "\\`")
+        elif parse_mode == "HTML":
+            # HTML için özel karakterleri escape et
+            text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
         for attempt in range(max_retries):
             try:
                 url = f"{self.base_url}/sendMessage"

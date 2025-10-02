@@ -138,10 +138,10 @@ class GridOTTStrategy(BaseStrategy):
         delta = gf - current_price
         
         # Eşik kontrolü: Δ > y (hassas karşılaştırma)
-        if delta <= y or abs(delta - y) < 1e-10:
+        if delta <= y:
             return GridSignal(
                 should_trade=False,
-                reason=f"AL modu: delta ({delta:.6f}) <= y ({y})"
+                reason=f"AL modu: delta ({delta:.6f}) <= y ({y}) - grid aralığı yetersiz"
             )
         
         # z hesapla
@@ -149,8 +149,15 @@ class GridOTTStrategy(BaseStrategy):
         if z < 1:
             return GridSignal(
                 should_trade=False,
-                reason=f"AL modu: z ({z}) < 1"
+                reason=f"AL modu: z ({z}) < 1 - grid seviyesi yetersiz"
             )
+        
+        # Debug log
+        self.log_strategy_action(
+            strategy.id,
+            "GRID_CALC_AL",
+            f"Delta: {delta:.6f}, y: {y}, z: {z}, target_price: {gf - (z * y):.6f}"
+        )
         
         # Hedef fiyat: P_buy = GF - z*y
         target_price = gf - (z * y)
@@ -220,10 +227,10 @@ class GridOTTStrategy(BaseStrategy):
         delta = current_price - gf
         
         # Eşik kontrolü: Δ > y (hassas karşılaştırma)
-        if delta <= y or abs(delta - y) < 1e-10:
+        if delta <= y:
             return GridSignal(
                 should_trade=False,
-                reason=f"SAT modu: delta ({delta:.6f}) <= y ({y})"
+                reason=f"SAT modu: delta ({delta:.6f}) <= y ({y}) - grid aralığı yetersiz"
             )
         
         # z hesapla
@@ -231,8 +238,15 @@ class GridOTTStrategy(BaseStrategy):
         if z < 1:
             return GridSignal(
                 should_trade=False,
-                reason=f"SAT modu: z ({z}) < 1"
+                reason=f"SAT modu: z ({z}) < 1 - grid seviyesi yetersiz"
             )
+        
+        # Debug log
+        self.log_strategy_action(
+            strategy.id,
+            "GRID_CALC_SAT",
+            f"Delta: {delta:.6f}, y: {y}, z: {z}, target_price: {gf + (z * y):.6f}"
+        )
         
         # Hedef fiyat: P_sell = GF + z*y
         target_price = gf + (z * y)
@@ -306,7 +320,24 @@ class GridOTTStrategy(BaseStrategy):
         
         # Grid fill processing - GF güncelleme
         old_gf = state.gf if state.gf is not None else trade.price
-        z = trade.z  # Trade objesinden z değerini al
+        
+        # Z değerini strategy_specific_data'dan al
+        strategy_data = trade.strategy_specific_data or {}
+        z = strategy_data.get('z', 0)
+        
+        # Eğer z değeri yoksa, trade fiyatından hesapla
+        if z == 0:
+            if trade.side == OrderSide.BUY:
+                # AL: z = (GF - price) / y
+                delta = old_gf - trade.price
+                z = math.floor(delta / y) if delta > 0 else 0
+            else:
+                # SAT: z = (price - GF) / y  
+                delta = trade.price - old_gf
+                z = math.floor(delta / y) if delta > 0 else 0
+        
+        # Trade objesindeki z değerini güncelle
+        trade.z = z
         
         # GF_new hesapla
         if trade.side == OrderSide.BUY:
@@ -317,6 +348,10 @@ class GridOTTStrategy(BaseStrategy):
             new_gf = old_gf + (z * y)
         
         state.gf = new_gf
+        
+        # GF değerlerini trade'e kaydet
+        trade.gf_before = old_gf
+        trade.gf_after = new_gf
         
         self.log_strategy_action(
             strategy.id, 

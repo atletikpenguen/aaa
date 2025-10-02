@@ -1,5 +1,480 @@
 # Trading Stratejileri Dokümantasyonu
 
+## 🔧 KRİTİK DÜZELTME: Döngü Hesaplama Sorunu Çözüldü (30 Eylül 2025)
+
+### **🚨 SORUN: DCA Stratejisinde Döngü Numarası Yanlış Hesaplanıyordu**
+
+**TESPİT EDİLEN SORUNLAR:**
+- **İlk Döngü Hatası**: Döngü D0 olarak başlıyordu (D1 olmalı)
+- **State Tutarsızlığı**: `cycle_number: 0` ama trades'te D0-1, D0-2... görünüyordu
+- **Döngü Geçişi Hatası**: Full exit sonrası döngü geçişi yanlış hesaplanıyordu
+
+**ÖNCEKİ DURUM:**
+```json
+{
+  "cycle_number": 0,
+  "cycle_trade_count": 5
+}
+```
+Trades: D0-1, D0-2, D0-3, D0-4, D0-5 ❌
+
+**DÜZELTME SONRASI:**
+```json
+{
+  "cycle_number": 1,
+  "cycle_trade_count": 5
+}
+```
+Trades: D1-1, D1-2, D1-3, D1-4, D1-5 ✅
+
+### **✅ ÇÖZÜM DETAYLARI:**
+
+**1. Döngü Başlangıcı Düzeltildi:**
+```python
+# models.py - ÖNCE:
+cycle_number: int = Field(default=0)  # D0, D1, D2...
+
+# models.py - SONRA:
+cycle_number: int = Field(default=1)  # D1, D2, D3... - İlk döngü D1 olarak başlar
+```
+
+**2. Döngü Görüntüleme Mantığı Düzeltildi:**
+```python
+# dca_ott_strategy.py - ÖNCE:
+f"D{state.cycle_number + 1}-{trade_count}"  # D0+1 = D1
+
+# dca_ott_strategy.py - SONRA:
+f"D{state.cycle_number}-{trade_count}"  # D1, D2, D3...
+```
+
+**3. Güvenli Debug Sistemi Eklendi:**
+```python
+def _debug_cycle_calculation(self, strategy_id: str, state: State, trade_type: str):
+    """Döngü hesaplama debug - WARNING düzeyinde güvenli debug"""
+    # Döngü mantığı kontrolü
+    cycle_logic_ok = True
+    if state.cycle_number < 1:
+        cycle_logic_ok = False  # Döngü numarası 1'den küçük olamaz
+    
+    # WARNING düzeyinde log
+    logger.warning(f"[CYCLE DEBUG] {strategy_id} | {trade_type} | ...")
+```
+
+**4. Debug Sistemi Aktif Edildi:**
+- **Sinyal Tipleri**: FIRST_BUY_SIGNAL, DCA_BUY_SIGNAL, FULL_SELL_SIGNAL, PARTIAL_SELL_SIGNAL
+- **Fill İşlemleri**: FILL_BUY, FILL_SELL, FULL_EXIT_CYCLE_TRANSITION
+- **Log Düzeyi**: WARNING (her zaman çalışır)
+- **Kontrol**: Döngü mantığı, pozisyon durumu, kritik sorun tespiti
+
+### **SONUÇ:**
+✅ **Döngü hesaplama sorunu tamamen çözüldü**
+✅ **Güvenli debug sistemi kuruldu**
+✅ **Gelecekteki tüm işlemler doğru döngü bilgileriyle kaydedilecek**
+✅ **Mevcut stratejilerin state'leri düzeltildi**
+
+---
+
+## 🎯 YENİ ÖZELLİK: DCA Stratejisinde Kar Alım Eşiği Parametresi (25 Eylül 2025)
+
+### **💰 DCA+OTT Stratejisinde Kar Alım Eşiği Artık Değişken**
+
+**YENİ PARAMETRE: `profit_threshold_pct`**
+- **Önceki Durum**: Kar alım için sabit %1 şartı
+- **Yeni Durum**: `profit_threshold_pct` parametresi ile ayarlanabilir kar alım eşiği
+- **Varsayılan Değer**: %1.0 (eski davranışı korur)
+- **Aralık**: %0.1 - %10.0 arası
+
+**ETKİLENEN ALANLAR:**
+- ✅ **Tam Satış**: Ortalama maliyetin `profit_threshold_pct` üzerinde
+- ✅ **Kısmi Satış**: Son alım fiyatının `profit_threshold_pct` üzerinde
+- ✅ **Backtest Engine**: Excel backtest'te de aynı parametre kullanılır
+- ✅ **Debug Logları**: Yeni parametre debug loglarında gösterilir
+
+**KULLANIM ÖRNEĞİ:**
+```json
+{
+  "profit_threshold_pct": 2.0,  // %2 kar alım eşiği
+  "min_drop_pct": 2.0,          // %2 minimum düşüş
+  "base_usdt": 100.0            // $100 ilk alım
+}
+```
+
+## 📊 YENİ ÖZELLİK: Excel Backtest Analiz Sistemi (22 Eylül 2025)
+
+### **🔥 YENİ ÖZELLİK: Excel Verisiyle Strateji Backtest Analizi**
+
+**TEMEL ÖZELLİKLER:**
+- **Excel OHLCV Yükleme**: Date, Time, Open, High, Low, Close, Volume formatında Excel dosyalarını yükleyin
+- **Strateji Seçimi**: Mevcut stratejilerimizden birini seçin (BOL-Grid, DCA+OTT, Grid+OTT)
+- **Parametre Özelleştirme**: Strateji parametrelerini istediğiniz gibi ayarlayın
+- **Gerçek Backtest**: Canlı sistemde kullandığımız strateji motoruyla backtest
+- **PnL Hesaplama**: Bizim kar-zarar hesaplama sistemimizle uyumlu
+- **Grafik Görselleştirme**: Fiyat ve bakiye performansının eş zamanlı gösterimi
+
+**BACKTEST ALGORİTMASI:**
+1. **Excel İşleme**: OHLCV verisini pandas DataFrame'e çevir
+2. **Strateji Başlatma**: Seçilen stratejiyi parametrelerle initialize et
+3. **Mum İşleme**: Her mum için OTT hesapla ve sinyal üret
+4. **İşlem Simülasyonu**: Kapanış fiyatında sinyal, sonraki açılışta işlem
+5. **PnL Güncelleme**: Bizim PnL calculator'ıyla kar-zarar hesapla
+6. **Sonuç Analizi**: İstatistikler, grafikler ve detaylı rapor
+
+**KULLANIM ADIMLARı:**
+1. **Adım 1**: Dashboard → "Backtest Analiz" sayfasına git
+2. **Adım 2**: Excel dosyanızı yükleyin (OHLCV formatında)
+3. **Adım 3**: Strateji seçin ve parametrelerini ayarlayın
+4. **Adım 4**: OTT parametrelerini belirleyin
+5. **Adım 5**: "Backtest Çalıştır" butonuna tıklayın
+6. **Adım 6**: Sonuçları analiz edin
+
+**DESTEKLENEN EXCEL FORMATI:**
+```
+Date        Time   Open     High     Low      Close    Volume   WClose
+05.11.2024  00:00  2423.55  2429.34  2356.00  2369.99  393320   2387.28
+05.11.2024  01:00  2369.98  2413.80  2364.91  2405.17  162084   2389.61
+05.11.2024  02:00  2405.18  2410.38  2391.36  2397.37  101640   2398.91
+```
+
+**BACKTEST SONUÇLARI:**
+- **Finansal Özet**: Başlangıç/final bakiyesi, realized/unrealized PnL, toplam getiri
+- **İşlem İstatistikleri**: Toplam işlem, alış/satış sayısı, win rate, max drawdown
+- **Performans Grafiği**: Fiyat ve bakiye performansının eş zamanlı gösterimi
+- **İşlem Tablosu**: Her işlemin detayları, kar/zarar, sinyal nedeni
+- **Risk Metrikleri**: Ortalama getiri, maksimum düşüş, kazanma oranı
+
+## 🔧 KRİTİK DÜZELTME: Overflow Hataları Çözüldü (23 Eylül 2025)
+
+### **🚨 SORUN: Sistemde Ciddi Matematiksel Overflow Hataları**
+
+**Tespit Edilen Hatalar:**
+- ❌ **"Result too large"** hataları: Matematiksel hesaplamalarda taşma
+- ❌ **"overflow encountered"** uyarıları: NumPy hesaplamalarında taşma  
+- ❌ **Sync calculate signal hatası**: Excel backtest'te sürekli hata
+- ❌ **PnL hesaplama hataları**: Pozisyon değerlerinde overflow
+- ❌ **RuntimeWarning**: Scalar multiply ve divide işlemlerinde taşma
+
+**Etkilenen Dosyalar:**
+- `core/pnl_calculator.py`: Pozisyon değeri ve PnL hesaplamalarında overflow
+- `core/excel_backtest_engine.py`: Signal calculation'da "Result too large"
+- `core/indicators.py`: EMA/SMA/OTT hesaplamalarında overflow riski
+
+### **✅ ÇÖZÜM: Overflow Korumalı Matematiksel Hesaplamalar**
+
+**Düzeltilen Fonksiyonlar:**
+
+#### **1. PnL Calculator (`core/pnl_calculator.py`)**
+```python
+# OVERFLOW KORUMALI VERSİYON
+max_safe_value = 1e15  # 1 katrilyon limit
+min_safe_value = 1e-15  # Minimum değer limiti
+
+# Pozisyon değeri hesaplama - overflow korumalı
+try:
+    position_value = abs(position_qty) * current_price_float
+    if position_value > max_safe_value:
+        position_value = max_safe_value
+        logger.warning(f"Position value overflow korundu: {position_value}")
+except (OverflowError, ValueError):
+    position_value = 0.0
+    logger.error("Position value hesaplama hatası")
+```
+
+#### **2. Signal Calculation (`core/excel_backtest_engine.py`)**
+```python
+# OVERFLOW KORUMALI VERSİYON
+# Güvenlik kontrolleri - overflow önleme
+max_safe_value = 1e15  # 1 katrilyon limit
+min_safe_value = 1e-15  # Minimum değer limiti
+
+# Current price güvenlik kontrolü
+try:
+    current_price_float = float(current_price)
+    if abs(current_price_float) > max_safe_value or current_price_float <= 0:
+        return TradingSignal(should_trade=False, reason="Geçersiz fiyat")
+except (ValueError, TypeError, OverflowError):
+    return TradingSignal(should_trade=False, reason="Fiyat dönüşüm hatası")
+```
+
+#### **3. Indicators (`core/indicators.py`)**
+```python
+# EMA Hesaplama - OVERFLOW KORUMALI
+# Fiyat değerlerini güvenli aralıkta kontrol et
+safe_prices = []
+for price in prices:
+    try:
+        price_float = float(price)
+        if abs(price_float) > max_safe_value or price_float <= 0:
+            logger.warning(f"EMA hesaplama - Geçersiz fiyat: {price_float}")
+            return []
+        safe_prices.append(price_float)
+    except (ValueError, TypeError, OverflowError):
+        logger.warning(f"EMA hesaplama - Fiyat dönüşüm hatası: {price}")
+        return []
+```
+
+### **🎯 SONUÇ: Sistem Artık Overflow Hataları Olmadan Çalışıyor**
+
+**Düzeltilen Hatalar:**
+- ✅ Excel backtest'te "Result too large" hataları çözüldü
+- ✅ PnL hesaplamalarında overflow uyarıları yok
+- ✅ Tüm matematiksel işlemler güvenli aralıklarda
+- ✅ Signal calculation'da overflow koruması
+- ✅ Indicators hesaplamalarında güvenlik kontrolleri
+
+**Güvenlik Önlemleri:**
+- ✅ **Maksimum Değer Limiti**: 1e15 (1 katrilyon)
+- ✅ **Minimum Değer Limiti**: 1e-15 (çok küçük değerler)
+- ✅ **Try-Catch Blokları**: Tüm matematiksel işlemlerde
+- ✅ **Fallback Değerler**: Hata durumunda güvenli varsayılan değerler
+- ✅ **Log Uyarıları**: Overflow riski durumunda uyarı
+
+**Test Sonuçları:**
+```python
+# Normal değerlerle test
+state = State(strategy_id='test', symbol='BTCUSDT')
+state.position_quantity = 1.0
+state.position_avg_cost = 100.0
+result = pnl_calculator.calculate_unrealized_pnl(state, 105.0)
+# Sonuç: {'unrealized_pnl': 5.0, 'unrealized_pnl_pct': 5.0, 'position_value': 105.0, 'total_balance': 1005.0}
+
+# Overflow değerlerle test
+state.position_quantity = 1e20  # Çok büyük değer
+state.position_avg_cost = 1e20
+result = pnl_calculator.calculate_unrealized_pnl(state, 1e20)
+# Sonuç: {'unrealized_pnl': 0.0, 'unrealized_pnl_pct': 0.0, 'position_value': 0.0, 'total_balance': 1000.0}
+# Overflow korundu, güvenli değerler döndü
+```
+
+## 🔧 DÜZELTME: DCA Referans Sistemi (23 Eylül 2025)
+
+### **🚨 SORUN: DCA Alış Mantığında Referans Fiyat Sistemi Bozulmuştu**
+
+**Tespit Edilen Sorunlar:**
+- ❌ **Yanlış referans**: Son satış fiyatından düşüş kontrolü yapıyordu
+- ❌ **Kısmi satış sonrası**: Referans fiyatı güncellenmiyordu  
+- ❌ **Tam satış sonrası**: Yeni döngü için referans sıfırlanmıyordu
+- ❌ **DCA hesaplama hatası**: Yanlış referans fiyattan düşüş kontrolü
+
+**Örnek Hatalı Senaryo:**
+```
+12.11.2024 23:00  BUY  $3285.13  (İlk alış - Referans = $3285.13)
+13.11.2024 16:00  BUY  $3217.63  (DCA alış - Referans = $3217.63) 
+14.11.2024 04:00  BUY  $3217.25  (DCA alış - Referans = $3217.25)
+```
+
+### **✅ ÇÖZÜM: Yeni Referans Sistemi Implement Edildi**
+
+**Yeni Referans Sistemi Kuralları:**
+
+#### **1. Alış Yapıldığında**
+```python
+# YENİ REFERANS SİSTEMİ: Alış yapıldığında referans fiyatı güncelle
+state.custom_data['reference_price'] = current_price_float
+backtest_debugger.log_debug(f"Referans fiyat güncellendi: {current_price_float}")
+```
+
+#### **2. Kısmi Satış Yapıldığında**
+```python
+# YENİ REFERANS SİSTEMİ: Kısmi satışta referans fiyatı güncelle (satış fiyatı)
+state.custom_data['reference_price'] = current_price_float
+backtest_debugger.log_debug(f"Referans fiyat güncellendi: {current_price_float}")
+```
+
+#### **3. Tam Satış Yapıldığında**
+```python
+# YENİ REFERANS SİSTEMİ: Tam satışta referans fiyatı sıfırla (yeni döngü için)
+state.custom_data['reference_price'] = 0
+backtest_debugger.log_debug(f"Referans fiyat sıfırlandı (yeni döngü için)")
+```
+
+#### **4. DCA Alış Kontrolü**
+```python
+# YENİ REFERANS SİSTEMİ: Son işlem tipine göre referans fiyat belirleme
+reference_price = state.custom_data.get('reference_price', state._last_buy_price)
+reference_price_float = float(reference_price)
+
+# Güvenli düşüş hesaplama - referans fiyattan düşüş
+drop_from_reference = ((reference_price_float - current_price_float) / reference_price_float) * 100
+```
+
+### **🎯 SONUÇ: DCA Mantığı Artık Doğru Çalışıyor**
+
+**Doğru Senaryo:**
+```
+1. İlk alış: x0 = $3285.13 → Referans = $3285.13
+2. DCA alış: x1 = $3217.63 → Referans = $3217.63 (x0'dan düşüş %2.10)
+3. DCA alış: x2 = $3217.25 → Referans = $3217.25 (x1'den düşüş %0.01)
+4. Kısmi satış: x3 = $3250.00 → Referans = $3250.00 (x2'nin %1 üzeri)
+5. DCA alış: x4 = $3200.00 → Referans = $3200.00 (x3'ten düşüş %1.54)
+6. Tam satış: x5 = $3300.00 → Referans = 0 (ortalama maliyetin %1 üzeri)
+7. Yeni döngü: x6 = $3100.00 → Referans = $3100.00 (yeni döngü alışı)
+```
+
+**Sistem Özellikleri:**
+- ✅ **Referans = 0 iken OTT AL**: Yeni döngü alışı
+- ✅ **Referans > 0 iken OTT AL**: DCA alışı (referans fiyattan düşüş kontrolü)
+- ✅ **Kısmi satış sonrası**: Referans = Satış fiyatı
+- ✅ **Tam satış sonrası**: Referans = 0 (yeni döngü için)
+- ✅ **Overflow korumalı**: Tüm hesaplamalar güvenli aralıklarda
+
+## 💰 DÜZELTİLMİŞ PnL SİSTEMİ: Profesyonel Kar-Zarar Takibi (22 Eylül 2025)
+
+### **🔥 KRİTİK DÜZELTME: Short Pozisyon Unrealized PnL Bug Düzeltmesi (22 Eylül 2025 - Akşam)**
+
+**SORUN:** 
+- ❌ Short pozisyonda fiyat artarken kar gözüküyordu (b24c6190 stratejisinde tespit edildi)
+- ❌ HUMAUSDT short pozisyonu: fiyat 0.0289601 → 0.029137 artarken +0.365 USD kar gözüküyordu
+- ❌ Mantık hatası: Short pozisyonda fiyat artışı zarar olmalı, kar değil!
+
+**ÇÖZÜM:**
+- ✅ `core/pnl_calculator.py` dosyasında short pozisyon formülü düzeltildi
+- ✅ Eski formül: `(avg_cost - current_price) * position_quantity` (yanlış!)  
+- ✅ Yeni formül: `(avg_cost - current_price) * abs(position_quantity)` (doğru!)
+- ✅ Test sonucu: Fiyat artışında -0.365 USD zarar gözüküyor (doğru!)
+
+### **Düzeltilmiş Kar-Zarar Hesaplama Sistemi**
+
+**Önceki Sistem Sorunları:**
+- ❌ Pozisyon artırımında bakiye yanlış azalıyordu
+- ❌ Pozisyon azaltımında ortalama maliyet yanlış değişiyordu
+- ❌ Gerçek trading mantığına uygun değildi
+- ❌ Short pozisyon unrealized PnL hesaplama hatası (YENİ DÜZELTME)
+
+**YENİ SİSTEM ÖZELLİKLERİ:**
+- ✅ **1000 USD Sabit Başlangıç**: Her strateji 1000 USD ile başlar
+- ✅ **DOĞRU Bakiye Mantığı**: Sadece realized PnL'de bakiye değişir
+- ✅ **DOĞRU Ortalama Maliyet**: Pozisyon artırımında güncellenir, azaltımında değişmez
+- ✅ **Gerçek Zamanlı PnL**: Anlık fiyat değişimlerine göre hesaplama
+- ✅ **Profesyonel Trading Mantığı**: Gerçek borsalara uygun
+
+### **TEMEL KURALLAR:**
+
+**POZISYON ARTIRIMI (Aynı Yönde Alım/Satım):**
+- 🔄 Bakiye DEĞİŞMEZ (realized PnL yok)
+- 📊 Ortalama maliyet ağırlıklı ortalama ile GÜNCELLENİR
+
+**POZISYON AZALTIMI (Ters Yönde Alım/Satım):**
+- 💰 Realized PnL hesaplanır ve bakiyeye EKLENİR
+- 📊 Ortalama maliyet DEĞİŞMEZ
+
+### **Hesaplama Formülleri:**
+
+**Pozisyon Artırımında Ortalama Maliyet:**
+```
+yeni_avg_cost = (eski_pozisyon * eski_avg_cost + yeni_trade * yeni_fiyat) / toplam_pozisyon
+```
+
+**Pozisyon Azaltımında Realized PnL:**
+```
+Long: realized_pnl = (satış_fiyatı - avg_cost) * satılan_miktar
+Short: realized_pnl = (avg_cost - satış_fiyatı) * satılan_miktar
+```
+
+**Unrealized PnL:**
+```
+Long: unrealized_pnl = (şimdiki_fiyat - avg_cost) * pozisyon_miktarı
+Short: unrealized_pnl = (avg_cost - şimdiki_fiyat) * pozisyon_miktarı
+```
+
+### **ÖRNEK SENARYO (DÜZELTME):**
+
+```
+Başlangıç: 1000 USD bakiye
+
+1. 100 adet 1 USD'dan al:
+   → Bakiye: 1000 USD (değişmez!)
+   → Pozisyon: 100@1.0 USD
+   → Unrealized PnL (fiyat 0.5): -50 USD
+   → Toplam: 950 USD
+
+2. 100 adet 0.7 USD'dan al (pozisyon artırımı):
+   → Bakiye: 1000 USD (hala değişmez!)
+   → Pozisyon: 200@0.85 USD (ağırlıklı: (100*1.0+100*0.7)/200)
+   → Unrealized PnL (fiyat 0.7): -30 USD
+   → Toplam: 970 USD
+
+3. 150 adet 1.15 USD'dan sat (pozisyon azaltımı):
+   → Realized PnL: (1.15-0.85)*150 = +45 USD
+   → Yeni bakiye: 1000 + 45 = 1045 USD
+   → Pozisyon: 50@0.85 USD (ortalama maliyet değişmez!)
+   → Unrealized PnL (fiyat 1.15): +15 USD
+   → Toplam: 1060 USD
+```
+
+### **Teknik Implementasyon:**
+
+**Yeni Model Alanları:**
+```python
+class State:
+    initial_balance: float = 1000.0      # Başlangıç sermayesi
+    cash_balance: float = 1000.0         # Nakit bakiye
+    realized_pnl: float = 0.0            # Gerçekleşen kar/zarar
+    position_quantity: float = 0.0       # Net pozisyon miktarı
+    position_avg_cost: Optional[float]   # Pozisyon ortalama maliyeti
+    position_side: Optional[str]         # "long" veya "short"
+```
+
+**PnL Calculator:**
+- `core/pnl_calculator.py`: Ana hesaplama motoru
+- `process_trade_fill()`: Trade gerçekleştiğinde PnL güncelleme
+- `calculate_unrealized_pnl()`: Gerçek zamanlı kar/zarar
+- `get_pnl_summary()`: Tam PnL özeti
+
+**🆕 PnL GEÇMİŞİ SİSTEMİ (21 Eylül 2025):**
+
+**Yeni Özellikler:**
+- **Otomatik PnL Geçmişi**: Her trade sonrası PnL durumu otomatik kaydedilir
+- **CSV Dosyası**: `data/{strategy_id}/pnl_history.csv` formatında saklanır
+- **Kapsamlı Veri**: Bakiye, kar/zarar, pozisyon, güncel fiyat bilgileri
+- **Grafik Hazır**: İlerde bakiye-fiyat grafiği için hazır veri seti
+
+**CSV Formatı:**
+```
+timestamp,strategy_id,current_price,total_balance,cash_balance,position_value,
+realized_pnl,unrealized_pnl,total_pnl,total_return_pct,position_quantity,
+position_avg_cost,position_side,trigger_trade_id,trigger_side,trigger_price,trigger_quantity
+```
+
+**Teknik Implementasyon:**
+- `PnLHistory` modeli: Geçmiş kayıt veri yapısı
+- `save_pnl_history()`: CSV'ye kaydetme fonksiyonu
+- `create_pnl_history_record()`: Trade sonrası kayıt oluşturma
+- Otomatik tetikleme: `_update_pnl_on_trade()` içinde
+
+## ♻️ DÜZELTME: DCA+OTT Döngü Mantığı Bug Düzeltmesi (20 Eylül 2025)
+
+### **Kritik Bug Düzeltmesi**
+- **Döngü sıfırlama bugı düzeltildi**: Full exit sonrası yeni döngü başlangıcında döngü numarası yanlış hesaplanıyordu
+- **Strategy Engine düzeltmesi**: `strategy_engine.py`'de döngü bilgisi hesaplama mantığı tamamen yeniden yazıldı
+- **DCA Strategy düzeltmesi**: `dca_ott_strategy.py`'de döngü geçiş mantığı düzeltildi
+- **State düzeltmeleri**: Tüm DCA stratejilerinin döngü numaraları trade geçmişiyle uyumlu hale getirildi
+
+### **Düzeltilen Stratejiler:**
+- **f101dc87 (DogeOtt)**: D13-1 → D12-1 ✅
+- **8c2a22c5 (solaa)**: D2-1 → D1-1 ✅  
+- **26220fed (huma)**: D1-1 → D3-2 ✅
+- **684f755d (avaxdca)**: D1-1 ✅ (Zaten doğruydu)
+
+### **Teknik Detaylar:**
+```python
+# ÖNCE (Yanlış):
+cycle_number = filled_order.strategy_specific_data.get('cycle_number', state.cycle_number)
+
+# SONRA (Doğru):
+current_cycle = state.cycle_number
+if len(state.dca_positions) == 0 and current_cycle > 0:
+    cycle_info = f"D{current_cycle + 1}-1"
+else:
+    cycle_info = f"D{current_cycle}-{current_trade_count + 1}"
+```
+
+### **Sonuç:**
+✅ **Döngü mantığı tamamen düzeltildi**
+✅ **Gelecekteki trade'ler doğru döngü bilgileriyle kaydedilecek**
+✅ **Döngü sıfırlama bugı tamamen giderildi**
+
+---
+
 ## 🛡️ **GÜVENLİK VE MONİTORİNG SİSTEMİ (6 Eylül 2025)**
 
 ### **Universal Debug Monitor Sistemi**
@@ -270,8 +745,8 @@ DCA+OTT stratejisi, düşen fiyatlarda artan alım yaparak ortalama maliyeti dü
 4. **Minimum Düşüş**: `min_drop_pct` kadar düşüş olmalı
 
 ### **Satış Kuralları**
-1. **Kısmi Satış**: OTT SAT verdiğinde, fiyat son alım fiyatının %1 üzerindeyse → sadece son pozisyonu sat
-2. **Tam Satış**: OTT SAT verdiğinde, fiyat ortalama maliyetin %1 üzerindeyse → tüm pozisyonu sat
+1. **Kısmi Satış**: OTT SAT verdiğinde, fiyat son alım fiyatının `profit_threshold_pct` üzerindeyse → sadece son pozisyonu sat
+2. **Tam Satış**: OTT SAT verdiğinde, fiyat ortalama maliyetin `profit_threshold_pct` üzerindeyse → tüm pozisyonu sat
 3. **Tam Satış Sonrası**: Yeni döngü başlar (state sıfırlanır)
 
 ### **Döngü Sistemi**
@@ -292,6 +767,7 @@ DCA+OTT stratejisi, düşen fiyatlarda artan alım yaparak ortalama maliyeti dü
 - **base_usdt**: İlk alım tutarı (USDT)
 - **dca_multiplier**: DCA çarpanı (varsayılan: 1.5)
 - **min_drop_pct**: Minimum düşüş yüzdesi (varsayılan: 2.0%)
+- **profit_threshold_pct**: Kar alım eşiği yüzdesi (varsayılan: 1.0%)
 - **use_market_orders**: Market emir kullanımı (varsayılan: true)
 
 ### **Debug Sistemi**
@@ -434,6 +910,163 @@ Her strateji için ayrı state dosyası tutulur:
 
 ---
 
-**Son Güncelleme:** 6 Eylül 2025  
-**Versiyon:** 2.1.0  
+## 🔧 DÜZELTME: DCA+OTT Alım Referansı Sorunu (25 Eylül 2025)
+
+### **Kritik Bug Düzeltmesi**
+- **Sorun**: DCA stratejisinde tekrar alım için yanlış referans kullanılıyordu
+- **Hatalı Mantık**: Son alım fiyatından düşüş kontrolü yapıyordu
+- **Doğru Mantık**: Son satış fiyatından düşüş kontrolü yapmalı
+- **Sonuç**: DCA stratejisi artık doğru mantıkla çalışacak
+
+### **Teknik Detaylar:**
+```python
+# ÖNCE (Yanlış):
+drop_from_last = ((position_analysis["last_buy_price"] - current_price) / position_analysis["last_buy_price"]) * 100
+
+# SONRA (Doğru):
+last_sell_price = state.custom_data.get('last_sell_price', position_analysis["last_buy_price"])
+drop_from_last_sell = ((last_sell_price - current_price) / last_sell_price) * 100
+```
+
+### **Düzeltilen Stratejiler:**
+- ✅ **Tüm DCA+OTT stratejileri**: Alım referansı düzeltildi
+- ✅ **Son satış fiyatı takibi**: `custom_data['last_sell_price']` ile kaydediliyor
+- ✅ **Debug logları**: Düşüş analizi son satış fiyatından yapılıyor
+
+## 🔧 DÜZELTME: NumPy Veri Tipi Uyumsuzluğu (25 Eylül 2025)
+
+### **Kritik Bug Düzeltmesi**
+- **Sorun**: Excel'den gelen fiyat verileri string olabiliyordu
+- **Hata**: `ufunc 'greater_equal' did not contain a loop with signature matching types`
+- **Çözüm**: OTT hesaplama öncesi float dönüşümü eklendi
+- **Sonuç**: NumPy karşılaştırma hataları çözüldü
+
+### **Teknik Detaylar:**
+```python
+# ÖNCE (Hatalı):
+close_prices = ohlcv_data['Close'].tolist()
+current_price = close_prices[-1]
+
+# SONRA (Doğru):
+close_prices = [float(x) for x in ohlcv_data['Close'].tolist() if pd.notna(x)]
+current_price = float(close_prices[-1]) if close_prices else 65400.0
+```
+
+### **Düzeltilen Dosyalar:**
+- ✅ **core/indicators.py**: OTT hesaplama veri tipi güvenliği
+- ✅ **core/excel_backtest_engine.py**: Excel fiyat verisi float dönüşümü
+- ✅ **Tüm stratejiler**: NumPy karşılaştırma hataları çözüldü
+
+## 🔧 DÜZELTME: drop_from_last Değişken Hatası (25 Eylül 2025)
+
+### **Kritik Bug Düzeltmesi**
+- **Sorun**: DCA stratejisinde tanımlanmamış `drop_from_last` değişkeni kullanılıyordu
+- **Hata**: `name 'drop_from_last' is not defined`
+- **Çözüm**: `drop_from_last` yerine `drop_from_last_sell` kullanılacak şekilde düzeltildi
+- **Sonuç**: NameError hatası çözüldü, strateji düzgün çalışacak
+
+### **Teknik Detaylar:**
+```python
+# ÖNCE (Hatalı):
+reason=f"DCA alım: {position_count+1}. pozisyon, {drop_from_last:.2f}% düşüş"
+"drop_pct": drop_from_last,
+
+# SONRA (Doğru):
+reason=f"DCA alım: {position_count+1}. pozisyon, {drop_from_last_sell:.2f}% düşüş"
+"drop_pct": drop_from_last_sell,
+```
+
+### **Düzeltilen Dosyalar:**
+- ✅ **core/dca_ott_strategy.py**: drop_from_last değişken hatası düzeltildi
+- ✅ **395. ve 400. satırlar**: Doğru değişken kullanımı sağlandı
+
+## 🔧 DÜZELTME: _sync_calculate_signal Veri Tipi Güvenliği (25 Eylül 2025)
+
+### **Kritik Bug Düzeltmesi**
+- **Sorun**: `_sync_calculate_signal` fonksiyonunda fiyat karşılaştırmalarında veri tipi uyumsuzluğu
+- **Hata**: `ufunc 'greater_equal' did not contain a loop with signature matching types`
+- **Çözüm**: Tüm fiyat karşılaştırmalarında `float()` dönüşümü eklendi
+- **Sonuç**: Excel backtest engine'de veri tipi hataları çözüldü
+
+### **Teknik Detaylar:**
+```python
+# ÖNCE (Hatalı):
+drop_from_last = ((state._last_buy_price - current_price) / state._last_buy_price) * 100
+if current_price >= avg_cost * 1.01:
+
+# SONRA (Doğru):
+last_buy_price = float(state._last_buy_price)
+current_price_float = float(current_price)
+drop_from_last = ((last_buy_price - current_price_float) / last_buy_price) * 100
+if current_price_float >= float(avg_cost) * 1.01:
+```
+
+### **Düzeltilen Karşılaştırmalar:**
+- ✅ **DCA düşüş hesaplama**: `state._last_buy_price` ve `current_price` float dönüşümü
+- ✅ **Tam satış kontrolü**: `current_price` ve `avg_cost` float dönüşümü  
+- ✅ **Kısmi satış kontrolü**: `current_price` ve `state._last_buy_price` float dönüşümü
+- ✅ **Debug logları**: Tüm log mesajlarında float değerler kullanılıyor
+
+## 🔧 DÜZELTME: DCA Ardışık Alım Sorunu Çözüldü (25 Eylül 2025)
+
+### **Kritik Bug Düzeltmesi**
+- **Sorun**: DCA stratejisinde ardışık alım fiyat artışı hatası
+- **Hata**: `consecutive_buy_price_increase` - DCA mantığına aykırı kontrol
+- **Sebep**: Çok katı güvenlik kontrolleri DCA mantığını engelliyordu
+- **Sonuç**: Stratejiler otomatik durduruluyordu
+
+### **Teknik Detaylar:**
+```python
+# ÖNCE (Çok Katı):
+if current_price > position_analysis["last_buy_price"]:
+    return TradingSignal(should_trade=False, reason="DCA kuralı ihlali")
+
+# SONRA (Düzeltildi):
+# Bu kontrol DCA mantığına aykırı olduğu için kaldırıldı
+# DCA'da fiyat düştükçe alım yapılmalı, bu kontrol çok katıydı
+```
+
+### **Düzeltilen Alanlar:**
+- ✅ **DCA Alım Kontrolü**: Son alım fiyatı kontrolü kaldırıldı
+- ✅ **Debug Monitor**: Ardışık alım kontrolü %5 eşiğine çıkarıldı
+- ✅ **Telegram Format**: HTML entity escape hatası düzeltildi
+- ✅ **Strateji Mantığı**: DCA stratejisi artık doğru mantıkla çalışacak
+
+## 🔧 DÜZELTME: DCA Alım Referansı Sorunu (Excel Backtest) (25 Eylül 2025)
+
+### **Kritik Bug Düzeltmesi**
+- **Sorun**: Excel backtest'te kısmi satış sonrası yanlış referans kullanılıyordu
+- **Hatalı Mantık**: Son alım fiyatından düşüş kontrolü yapıyordu
+- **Doğru Mantık**: Son satış fiyatından düşüş kontrolü yapmalı
+- **Sonuç**: Excel backtest'te DCA mantığı canlı strateji ile uyumlu hale getirildi
+
+### **Teknik Detaylar:**
+```python
+# ÖNCE (Hatalı):
+last_buy_price = float(state._last_buy_price)
+drop_from_last = ((last_buy_price - current_price_float) / last_buy_price) * 100
+
+# SONRA (Doğru):
+last_sell_price = state.custom_data.get('last_sell_price', state._last_buy_price)
+last_sell_price_float = float(last_sell_price)
+drop_from_last_sell = ((last_sell_price_float - current_price_float) / last_sell_price_float) * 100
+```
+
+### **Düzeltilen Mantık:**
+- ✅ **DCA alım referansı**: Son satış fiyatından düşüş kontrolü
+- ✅ **Son satış fiyatı takibi**: `custom_data['last_sell_price']` ile kaydediliyor
+- ✅ **Hem tam hem kısmi satış**: Son satış fiyatı otomatik kaydediliyor
+- ✅ **Debug logları**: Düşüş analizi son satış fiyatından yapılıyor
+
+### **Örnek Senaryo:**
+```
+16.11.2024 23:00: Kısmi satış $3151.80'den yapıldı
+17.11.2024 03:00: $3150.94'ten alış YAPILMAMALI (sadece %0.03 düşüş!)
+Doğru: $3151.80 × (1 - 0.02) = $3088.76'dan alış yapılmalı
+```
+
+---
+
+**Son Güncelleme:** 25 Eylül 2025  
+**Versiyon:** 2.1.2  
 **Geliştirici:** YLMZ Trading Systems

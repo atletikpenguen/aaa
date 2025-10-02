@@ -1,119 +1,17 @@
 {
   "strategies": [
     {
-      "id": "8208dbe7",
-      "name": "doge5m",
+      "id": "fb13dd80",
+      "name": "doge_grid",
       "symbol": "DOGEUSDT",
       "timeframe": "5m",
       "strategy_type": "grid_ott",
       "parameters": {
-        "y": 0.002,
-        "usdt_grid": 30.0
+        "y": 0.001,
+        "usdt_grid": 20.0
       },
-      "y": 0.002,
-      "usdt_grid": 30.0,
-      "gf": 0.0,
-      "price_min": 0.15,
-      "price_max": 0.3,
-      "ott": {
-        "period": 5,
-        "opt": 2.0
-      },
-      "active": true,
-      "created_at": "2025-08-28T19:18:01.947497",
-      "updated_at": "2025-09-15T14:50:24.129788",
-      "total_trades": 68,
-      "total_profit": 0.0
-    },
-    {
-      "id": "afb5f1c4",
-      "name": "avax5m",
-      "symbol": "AVAXUSDT",
-      "timeframe": "5m",
-      "strategy_type": "dca_ott",
-      "parameters": {
-        "base_usdt": 100.0,
-        "dca_multiplier": 1.2,
-        "min_drop_pct": 5.0
-      },
-      "y": null,
-      "usdt_grid": null,
-      "gf": 0.0,
-      "price_min": null,
-      "price_max": null,
-      "ott": {
-        "period": 19,
-        "opt": 2.0
-      },
-      "active": true,
-      "created_at": "2025-08-28T19:20:39.763473",
-      "updated_at": "2025-09-12T05:25:38.901122",
-      "total_trades": 30,
-      "total_profit": 0.0
-    },
-    {
-      "id": "6a89eeb1",
-      "name": "dogeDCA",
-      "symbol": "DOGEUSDT",
-      "timeframe": "5m",
-      "strategy_type": "dca_ott",
-      "parameters": {
-        "base_usdt": 100.0,
-        "dca_multiplier": 1.2,
-        "min_drop_pct": 5.0
-      },
-      "y": null,
-      "usdt_grid": null,
-      "gf": 0.0,
-      "price_min": null,
-      "price_max": null,
-      "ott": {
-        "period": 19,
-        "opt": 2.0
-      },
-      "active": true,
-      "created_at": "2025-08-28T19:21:36.398505",
-      "updated_at": "2025-09-15T22:52:03.795138",
-      "total_trades": 25,
-      "total_profit": 0.0
-    },
-    {
-      "id": "66638f5d",
-      "name": "ethgrid",
-      "symbol": "ETHUSDT",
-      "timeframe": "5m",
-      "strategy_type": "grid_ott",
-      "parameters": {
-        "y": 100.0,
-        "usdt_grid": 50.0
-      },
-      "y": 100.0,
-      "usdt_grid": 50.0,
-      "gf": 0.0,
-      "price_min": null,
-      "price_max": null,
-      "ott": {
-        "period": 14,
-        "opt": 2.0
-      },
-      "active": true,
-      "created_at": "2025-08-28T19:22:16.542625",
-      "updated_at": "2025-09-15T13:40:20.427934",
-      "total_trades": 11,
-      "total_profit": 0.0
-    },
-    {
-      "id": "032e3b5b",
-      "name": "avax_grid",
-      "symbol": "AVAXUSDT",
-      "timeframe": "5m",
-      "strategy_type": "grid_ott",
-      "parameters": {
-        "y": 0.5,
-        "usdt_grid": 50.0
-      },
-      "y": 0.5,
-      "usdt_grid": 50.0,
+      "y": 0.001,
+      "usdt_grid": 20.0,
       "gf": 0.0,
       "price_min": null,
       "price_max": null,
@@ -121,117 +19,66 @@
         "period": 5,
         "opt": 2.0
       },
-      "active": true,
-      "created_at": "2025-08-28T19:22:52.965869",
-      "updated_at": "2025-09-15T12:05:50.465057",
-      "total_trades": 25,
+      "active": false,
+      "created_at": "2025-09-30T19:25:32.124648",
+      "updated_at": "2025-10-02T11:51:33.457000",
+      "total_trades": 0,
       "total_profit": 0.0
     },
     {
-      "id": "8b1304a4",
-      "name": "btc5mgrid",
-      "symbol": "BTCUSDT",
-      "timeframe": "15m",
-      "strategy_type": "grid_ott",
-      "parameters": {
-        "y": 2000.0,
-        "usdt_grid": 200.0
-      },
-      "y": 2000.0,
-      "usdt_grid": 200.0,
-      "gf": 112000.0,
-      "price_min": null,
-      "price_max": null,
-      "ott": {
-        "period": 14,
-        "opt": 2.0
-      },
-      "active": true,
-      "created_at": "2025-08-29T16:28:13.135326",
-      "updated_at": "2025-09-11T23:15:41.343142",
-      "total_trades": 5,
-      "total_profit": 0.0
-    },
-    {
-      "id": "f101dc87",
-      "name": "DogeOtt",
-      "symbol": "DOGEUSDT",
-      "timeframe": "15m",
-      "strategy_type": "dca_ott",
-      "parameters": {
-        "base_usdt": 100.0,
-        "dca_multiplier": 1.2,
-        "min_drop_pct": 5.0
-      },
-      "y": null,
-      "usdt_grid": null,
-      "gf": 0.0,
-      "price_min": null,
-      "price_max": null,
-      "ott": {
-        "period": 20,
-        "opt": 0.4
-      },
-      "active": true,
-      "created_at": "2025-09-05T01:06:14.825770",
-      "updated_at": "2025-09-15T17:31:05.282221",
-      "total_trades": 25,
-      "total_profit": 0.0
-    },
-    {
-      "id": "8c2a22c5",
-      "name": "solaa",
-      "symbol": "SOLUSDT",
-      "timeframe": "15m",
-      "strategy_type": "dca_ott",
-      "parameters": {
-        "base_usdt": 100.0,
-        "dca_multiplier": 1.2,
-        "min_drop_pct": 5.0
-      },
-      "y": null,
-      "usdt_grid": null,
-      "gf": 0.0,
-      "price_min": null,
-      "price_max": null,
-      "ott": {
-        "period": 19,
-        "opt": 0.8
-      },
-      "active": true,
-      "created_at": "2025-09-05T11:05:56.699935",
-      "updated_at": "2025-09-13T22:45:33.581722",
-      "total_trades": 11,
-      "total_profit": 0.0
-    },
-    {
-      "id": "47682998",
-      "name": "dddd",
+      "id": "8123a773",
+      "name": "dog_dca",
       "symbol": "DOGEUSDT",
       "timeframe": "5m",
-      "strategy_type": "bol_grid",
+      "strategy_type": "dca_ott",
       "parameters": {
-        "initial_usdt": 50.0,
-        "min_drop_pct": 1.0,
-        "min_profit_pct": 1.0,
-        "bollinger_period": 50,
-        "bollinger_std": 1.0
+        "base_usdt": 23.0,
+        "dca_multiplier": 1.1,
+        "min_drop_pct": 2.0,
+        "profit_threshold_pct": 1.0
       },
-      "y": 200.0,
-      "usdt_grid": 100.0,
+      "y": null,
+      "usdt_grid": null,
       "gf": 0.0,
       "price_min": null,
       "price_max": null,
       "ott": {
-        "period": 14,
-        "opt": 2.0
+        "period": 5,
+        "opt": 1.0
       },
-      "active": true,
-      "created_at": "2025-09-06T12:44:28.147460",
-      "updated_at": "2025-09-09T08:59:33.729040",
+      "active": false,
+      "created_at": "2025-10-01T01:33:46.201882",
+      "updated_at": "2025-10-02T11:51:49.548256",
+      "total_trades": 0,
+      "total_profit": 0.0
+    },
+    {
+      "id": "f688e233",
+      "name": "avax_dca",
+      "symbol": "AVAXUSDT",
+      "timeframe": "5m",
+      "strategy_type": "dca_ott",
+      "parameters": {
+        "base_usdt": 45.0,
+        "dca_multiplier": 1.1,
+        "min_drop_pct": 2.0,
+        "profit_threshold_pct": 1.0
+      },
+      "y": null,
+      "usdt_grid": null,
+      "gf": 0.0,
+      "price_min": null,
+      "price_max": null,
+      "ott": {
+        "period": 5,
+        "opt": 1.0
+      },
+      "active": false,
+      "created_at": "2025-10-01T17:21:32.684847",
+      "updated_at": "2025-10-02T11:52:03.555760",
       "total_trades": 0,
       "total_profit": 0.0
     }
   ],
-  "last_update": "2025-09-15T22:52:03.795791"
+  "last_update": "2025-10-02T11:52:03.555944"
 }
