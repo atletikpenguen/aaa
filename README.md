@@ -1,5 +1,22 @@
 # Trader YLMZ 2.0
 
+## 📋 **VERSİYON TAKİBİ**
+
+### **VPS Aktif Versiyon (5 Ekim 2025)**
+- **Durum**: VPS'te çalışan aktif versiyon
+- **Son Değişiklikler**: 
+  - ✅ Kısmi satış hatası düzeltildi: `'dict' object has no attribute 'quantity'`
+  - ✅ Strateji f1db794e hatası çözüldü
+  - ⚠️ Risk kontrolü aktif: Minimum pozisyon limiti -400.00$ aşıldı
+
+### **Değişen Dosyalar**
+- **core/dca_ott_strategy.py** (5 Ekim 2025)
+  - Kısmi satış hatası düzeltildi: `last_position.quantity` → `last_position["quantity"]`
+  - `last_position.order_id` → `last_position["order_id"]` düzeltmesi
+  - `last_position.buy_price` → `last_position["buy_price"]` düzeltmesi
+  - Dict erişim hataları tamamen çözüldü
+
+---
 
 masasütü
 PS C:\pythonProjeler\0_corsur\_trader\vps_aktif\aaa> python -m uvicorn app:app --reload

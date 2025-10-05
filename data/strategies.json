@@ -1,84 +1,30 @@
 {
   "strategies": [
     {
-      "id": "fb13dd80",
-      "name": "doge_grid",
+      "id": "e660e62c",
+      "name": "doge_gridd",
       "symbol": "DOGEUSDT",
       "timeframe": "5m",
       "strategy_type": "grid_ott",
       "parameters": {
         "y": 0.001,
-        "usdt_grid": 20.0
+        "usdt_grid": 33.0
       },
       "y": 0.001,
-      "usdt_grid": 20.0,
+      "usdt_grid": 33.0,
       "gf": 0.0,
       "price_min": null,
       "price_max": null,
       "ott": {
-        "period": 5,
-        "opt": 2.0
-      },
-      "active": false,
-      "created_at": "2025-09-30T19:25:32.124648",
-      "updated_at": "2025-10-02T11:51:33.457000",
-      "total_trades": 0,
-      "total_profit": 0.0
-    },
-    {
-      "id": "8123a773",
-      "name": "dog_dca",
-      "symbol": "DOGEUSDT",
-      "timeframe": "5m",
-      "strategy_type": "dca_ott",
-      "parameters": {
-        "base_usdt": 23.0,
-        "dca_multiplier": 1.1,
-        "min_drop_pct": 2.0,
-        "profit_threshold_pct": 1.0
-      },
-      "y": null,
-      "usdt_grid": null,
-      "gf": 0.0,
-      "price_min": null,
-      "price_max": null,
-      "ott": {
-        "period": 5,
+        "period": 9,
         "opt": 1.0
       },
-      "active": false,
-      "created_at": "2025-10-01T01:33:46.201882",
-      "updated_at": "2025-10-02T11:51:49.548256",
-      "total_trades": 0,
-      "total_profit": 0.0
-    },
-    {
-      "id": "f688e233",
-      "name": "avax_dca",
-      "symbol": "AVAXUSDT",
-      "timeframe": "5m",
-      "strategy_type": "dca_ott",
-      "parameters": {
-        "base_usdt": 45.0,
-        "dca_multiplier": 1.1,
-        "min_drop_pct": 2.0,
-        "profit_threshold_pct": 1.0
-      },
-      "y": null,
-      "usdt_grid": null,
-      "gf": 0.0,
-      "price_min": null,
-      "price_max": null,
-      "ott": {
-        "period": 5,
-        "opt": 1.0
-      },
-      "active": false,
-      "created_at": "2025-10-01T17:21:32.684847",
-      "updated_at": "2025-10-02T11:52:03.555760",
+      "active": true,
+      "created_at": "2025-10-02T18:20:34.074798",
+      "updated_at": "2025-10-02T18:20:42.992801",
       "total_trades": 0,
       "total_profit": 0.0
     }
   ],
-  "last_update": "2025-10-02T11:52:03.555944"
+  "last_update": "2025-10-02T18:20:42.992946"
 }

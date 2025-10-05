@@ -425,11 +425,11 @@ class DCAOTTStrategy(BaseStrategy):
                 should_trade=True,
                 side=OrderSide.SELL,
                 target_price=target_price,
-                quantity=round_to_tick(last_position.quantity, market_info.step_size),
+                quantity=round_to_tick(last_position["quantity"], market_info.step_size),
                     reason=f"Son pozisyon satışı: Fiyat ({current_price}) >= Son alım kâr eşiği (${partial_profit_threshold:.4f}) - %{profit_vs_last:.2f} kâr ({order_type}) - D{state.cycle_number}-{trade_count}",
                 strategy_specific_data={
                     "sell_type": "partial_exit",
-                    "position_to_sell": last_position.order_id,
+                    "position_to_sell": last_position["order_id"],
                     "profit_vs_last": profit_vs_last,
                     "partial_profit_threshold": partial_profit_threshold,
                     "order_type": order_type,
@@ -677,11 +677,11 @@ class DCAOTTStrategy(BaseStrategy):
             "position_count": position_count,
             "total_quantity": total_quantity,
             "avg_cost": avg_cost,
-            "last_buy_price": last_position.buy_price if last_position else 0.0,
+            "last_buy_price": last_position["buy_price"] if last_position else 0.0,
             "last_position": {
-                "quantity": last_position.quantity,
-                "buy_price": last_position.buy_price,
-                "order_id": last_position.order_id
+                "quantity": last_position["quantity"],
+                "buy_price": last_position["buy_price"],
+                "order_id": last_position["order_id"]
             } if last_position else None,
             "unrealized_pnl": 0.0,  # Bu değer current_price ile hesaplanmalı
             "unrealized_pnl_pct": 0.0  # Bu değer current_price ile hesaplanmalı

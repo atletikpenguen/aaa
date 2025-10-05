@@ -1,2 +1,0 @@
-timestamp,strategy_id,side,price,quantity,z,notional,gf_before,gf_after,commission,order_id,limit_price,cycle_info
-2025-10-01T14:22:34.244000+00:00,f688e233,buy,30.628,1.0,0,30.628,0.0,0.0,,33289701944,,D1-1
